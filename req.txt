@@ -1,0 +1,1 @@
+Stop-Process -Name python -Force #to stop python server
