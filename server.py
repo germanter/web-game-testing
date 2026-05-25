@@ -1,47 +1,58 @@
+import http.server
+import socketserver
+import json
+import os
 
-socket = __import__('sys').modules['builtin_importers'] if False else __import__('socket')
+PORT = 8000
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(('127.0.0.1', 5000))
-server.listen(1)
-
-print("listening on http://127.0.0.1:5000...")
-
-while True:
-    client_conn, addr = server.accept()
-    request = client_conn.recv(4096).decode('utf-8')
+class GameServerHandler(http.server.SimpleHTTPRequestHandler):
     
-    if not request:
-        client_conn.close()
-        continue
-        
-    header_part, _, body_part = request.partition('\r\n\r\n')
-    
-    if "POST / " in header_part:
-        # Handle saving the file
-        with open("config.js", "w") as f:
-            f.write(f"export const data = {body_part.strip()};")
-        client_conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-        
-    elif "GET /config.js" in header_part:
-        # FIX: Serve the JS file with the proper JavaScript MIME type header
+    # SimpleHTTPRequestHandler automatically handles GET requests (serving your HTML/JS/CSS).
+    # We only need to override do_POST to handle your saveMapToDisk() fetch call.
+    def do_POST(self):
         try:
-            with open("config.js", "r") as f:
-                js_data = f.read()
-            response = f"HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {len(js_data)}\r\n\r\n{js_data}"
-            client_conn.sendall(response.encode('utf-8'))
-        except:
-            client_conn.sendall(b"HTTP/1.1 404 Not Found\r\n\r\n")
+            # 1. Get the size of the incoming data
+            content_length = int(self.headers['Content-Length'])
             
-    else:
-        # Serve the HTML page
+            # 2. Read and decode the incoming JSON payload
+            post_data = self.rfile.read(content_length)
+            map_data = json.loads(post_data.decode('utf-8'))
+            
+            # 3. Write it out to config.js in standard ES6 Module format
+            with open('config.js', 'w') as f:
+                f.write("// Procedurally generated map save file\n")
+                f.write("export const data = ")
+                f.write(json.dumps(map_data, indent=4))
+                f.write(";\n")
+            
+            # 4. Send a successful response back to the browser
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "success", "message": "Map saved to config.js"}')
+            
+            print(f"[*] Map saved successfully! ({len(map_data)} blocks)")
+            
+        except Exception as e:
+            # Handle any errors cleanly without crashing the server
+            print(f"[!] Error saving map: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "error", "message": "Failed to save map"}')
+
+if __name__ == "__main__":
+    # Ensure config.js exists before starting (prevents import errors in JS)
+    if not os.path.exists('config.js'):
+        with open('config.js', 'w') as f:
+            f.write("export const data = [];\n")
+            print("[*] Created empty config.js file.")
+
+    # Start the local server
+    with socketserver.TCPServer(("", PORT), GameServerHandler) as httpd:
+        print(f"[*] Thin Game Server running at: http://localhost:{PORT}")
+        print("[*] Press Ctrl+C to stop.")
         try:
-            with open("index.html", "r") as f:
-                html = f.read()
-            response = f"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {len(html)}\r\n\r\n{html}"
-            client_conn.sendall(response.encode('utf-8'))
-        except:
-            client_conn.sendall(b"HTTP/1.1 404 Not Found\r\n\r\n")
-            
-    client_conn.close()
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\n[*] Server stopped.")
