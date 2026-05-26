@@ -1,119 +1,76 @@
 ///// src/initMap.js /////
 
-// Import your save data
-import { data } from '../config.js'; 
-
-// Import modular systems
-export const WORLD_SEED = "germanter-hysler-2000"; 
+import { data }                       from '../config.js';
+import { WORLD_SEED }                  from './global.js';
 import { scene, renderer, chunks, updateMap, getMacroBiomeValue, getHeight } from './map/mainMap.js';
 import { camera, initCameraControls, updateCameraMovement, handleCameraResize } from './camera/debugCamera.js';
-import { spawnBlock } from '../assets/objects.js';
-import * as DebugController from '../ui/debug/debugController.js';
+import * as DC                         from '../ui/debug/debugController.js';
+import * as Planter                    from './objPlanter.js';
 
-// Application Globals
-let buildMode = false;
-const raycaster = new THREE.Raycaster();
-const centerPoint = new THREE.Vector2(0, 0); // Center of screen for crosshair
-const placedBlocks = []; // Tracks blocks currently rendered
+// ── Boot sequence ──────────────────────────────────────────────────────────────
 
-// Setup UI
-const instructions = document.getElementById('instructions');
-const statsEl = document.getElementById('stats');
-const biomeEl = document.getElementById('biome-info');
+// 1. Create ALL UI through debugController (our only UI gate)
+DC.initAllUI(WORLD_SEED);
 
-DebugController.initDebugUI(WORLD_SEED);
-DebugController.setupPointerLockUI(instructions);
-initCameraControls(); // Initialize Mouse/WASD Listeners
+// 2. Wire pointer lock overlay — won't lock when planter mode is active
+DC.setupPointerLockUI(() => !Planter.isPlanterActive());
 
-// Window Resizing Handlers
+// 3. Init camera WASD/mouse-look listeners
+initCameraControls();
+
+// 4. Init object planter (TransformControls + inventory UI)
+Planter.initPlanter(renderer.domElement);
+
+// 5. Load any previously saved objects
+Planter.loadSavedObjects();
+
+// ── Window resize ──────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     handleCameraResize(window.innerWidth, window.innerHeight);
 });
 
-// --- SAVING AND LOADING LOGIC ---
-function loadSavedMap() {
-    console.log("Loading blocks from save data...", data);
-    data.forEach(blockData => {
-        spawnBlock(scene, placedBlocks, blockData.x, blockData.y, blockData.z);
-    });
-}
+// ── Save to server (P key) ─────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyP') saveMapToDisk();
+});
 
 async function saveMapToDisk() {
-    console.log("Saving Map Data to Server...", data);
+    console.log('Saving map…', data);
     try {
         await fetch('/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify(data),
         });
-        console.log("Save successful!");
-        DebugController.showSaveNotification(instructions);
+        console.log('Save successful!');
+        DC.showSaveNotification();
     } catch (err) {
-        console.error("Failed to save map:", err);
+        console.error('Failed to save map:', err);
     }
 }
 
-// --- BUILD CONTROLS ---
-document.addEventListener('keydown', (e) => {
-    if (e.code === 'Digit1') {
-        buildMode = !buildMode;
-        console.log("Build Mode:", buildMode ? "ON" : "OFF");
-        DebugController.updateCrosshairBuildMode(buildMode);
-    }
-    if (e.code === 'KeyP') {
-        saveMapToDisk();
-    }
-});
-
-document.addEventListener('mousedown', (e) => {
-    if (document.pointerLockElement === document.body && buildMode && e.button === 0) {
-        raycaster.setFromCamera(centerPoint, camera);
-        
-        const activeTerrainMeshes = Array.from(chunks.values());
-        const intersects = raycaster.intersectObjects(activeTerrainMeshes);
-        
-        if (intersects.length > 0) {
-            const hitPoint = intersects[0].point; 
-            
-            spawnBlock(scene, placedBlocks, hitPoint.x, hitPoint.y, hitPoint.z);
-            
-            data.push({
-                type: "basic_block",
-                x: hitPoint.x,
-                y: hitPoint.y,
-                z: hitPoint.z
-            });
-        }
-    }
-});
-
-// --- MAIN APPLICATION LOOP ---
+// ── Main animation loop ────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
-let frameCounter = 0; 
+let frameCounter = 0;
 
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
 
-    // 1. Move Camera logic (passes terrain height for ground collision)
-    const currentGroundHeight = getHeight(camera.position.x, camera.position.z);
-    updateCameraMovement(delta, currentGroundHeight);
+    // Camera movement (auto-paused in planter mode by debugCamera)
+    updateCameraMovement(delta, getHeight(camera.position.x, camera.position.z));
 
-    // 2. Run Map Engine Logic (Chunks, Water alignment, etc)
+    // Chunk streaming + water
     updateMap(camera);
 
-    // 3. Throttle UI predictability updates
-    if (++frameCounter % 10 === 0) {
-        DebugController.updateDebugStats(statsEl, chunks.size, camera);
-        let macro = getMacroBiomeValue(camera.position.x, camera.position.z);
-        DebugController.updateBiomeUI(biomeEl, macro);
+    // Throttled debug UI updates (every 10 frames)
+    if (++frameCounter % 10 === 0 && DC.DEBUG) {
+        DC.updateDebugStats(DC.getStatsEl(), chunks.size, camera);
+        DC.updateBiomeUI(DC.getBiomeEl(), getMacroBiomeValue(camera.position.x, camera.position.z));
     }
 
-    // Render Scene
     renderer.render(scene, camera);
 }
 
-// Kickoff
-loadSavedMap();
 animate();
