@@ -4,9 +4,11 @@
 import { data } from '../config.js'; 
 
 // Import modular systems
-import { scene, camera, renderer, chunks, updateMap, getMacroBiomeValue, WORLD_SEED } from './map/mainMap.js';
-import { spawnBlock } from './map/objects.js';
-import * as DebugController from './map/debugController.js';
+export const WORLD_SEED = "germanter-hysler-2000"; 
+import { scene, renderer, chunks, updateMap, getMacroBiomeValue, getHeight } from './map/mainMap.js';
+import { camera, initCameraControls, updateCameraMovement, handleCameraResize } from './camera/debugCamera.js';
+import { spawnBlock } from '../assets/objects.js';
+import * as DebugController from '../ui/debug/debugController.js';
 
 // Application Globals
 let buildMode = false;
@@ -21,6 +23,13 @@ const biomeEl = document.getElementById('biome-info');
 
 DebugController.initDebugUI(WORLD_SEED);
 DebugController.setupPointerLockUI(instructions);
+initCameraControls(); // Initialize Mouse/WASD Listeners
+
+// Window Resizing Handlers
+window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    handleCameraResize(window.innerWidth, window.innerHeight);
+});
 
 // --- SAVING AND LOADING LOGIC ---
 function loadSavedMap() {
@@ -87,16 +96,21 @@ function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
 
-    // Run Map Engine Logic
-    updateMap(delta);
+    // 1. Move Camera logic (passes terrain height for ground collision)
+    const currentGroundHeight = getHeight(camera.position.x, camera.position.z);
+    updateCameraMovement(delta, currentGroundHeight);
 
-    // Throttle UI predictability updates
+    // 2. Run Map Engine Logic (Chunks, Water alignment, etc)
+    updateMap(camera);
+
+    // 3. Throttle UI predictability updates
     if (++frameCounter % 10 === 0) {
         DebugController.updateDebugStats(statsEl, chunks.size, camera);
         let macro = getMacroBiomeValue(camera.position.x, camera.position.z);
         DebugController.updateBiomeUI(biomeEl, macro);
     }
 
+    // Render Scene
     renderer.render(scene, camera);
 }
 

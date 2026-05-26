@@ -1,1 +1,3 @@
 Stop-Process -Name python -Force #to stop python server
+.\.venv\Scripts\activate
+Ctrl + Shift + R //reload page chache

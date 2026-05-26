@@ -1,6 +1,7 @@
 ///// src/map/mainMap.js /////
+import { generateTreesForChunk, disposeTreesForChunk } from './tree.js';
+import { WORLD_SEED } from '../global.js';
 
-export const WORLD_SEED = "germanter-hysler-2000"; 
 
 // DJB2 String Hashing function
 function hashString(str) {
@@ -182,9 +183,6 @@ const chunkSize = 250;
 const chunkRes = 80;   
 scene.fog = new THREE.Fog(0x87ceeb, chunkSize * (renderDist - 1.5), chunkSize * renderDist);
 
-export const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 5000);
-camera.position.set(0, 300, 0); 
-
 export const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -258,9 +256,9 @@ function buildChunk(cx, cz) {
     return mesh;
 }
 
-function updateChunks() {
-    const cx = Math.round(camera.position.x / chunkSize);
-    const cz = Math.round(camera.position.z / chunkSize);
+function updateChunks(cameraRef) {
+    const cx = Math.round(cameraRef.position.x / chunkSize);
+    const cz = Math.round(cameraRef.position.z / chunkSize);
     const activeKeys = new Set();
     
     for(let x = -renderDist; x <= renderDist; x++) {
@@ -276,106 +274,38 @@ function updateChunks() {
     }
     chunkQueue.sort((a, b) => a.distSq - b.distSq);
     
+    // --- MODIFIED: Terrain AND Tree Disposal ---
     for(let [key, mesh] of chunks.entries()) {
         if(!activeKeys.has(key)) {
+            // Dispose Terrain
             mesh.geometry.dispose();
             scene.remove(mesh);
             chunks.delete(key);
+
+            // Dispose Trees
+            const coords = key.split(',');
+            disposeTreesForChunk(parseInt(coords[0]), parseInt(coords[1]), scene);
         }
     }
 
+    // --- MODIFIED: Terrain AND Tree Generation ---
     if(chunkQueue.length > 0) {
         const q = chunkQueue.shift();
-        if(Math.abs(q.tx - Math.round(camera.position.x/chunkSize)) <= renderDist && 
-           Math.abs(q.tz - Math.round(camera.position.z/chunkSize)) <= renderDist) {
+        if(Math.abs(q.tx - Math.round(cameraRef.position.x/chunkSize)) <= renderDist && 
+           Math.abs(q.tz - Math.round(cameraRef.position.z/chunkSize)) <= renderDist) {
+            
+            // Build Terrain
             chunks.set(q.key, buildChunk(q.tx, q.tz));
+
+            // Build Trees (Passing existing getHeight function to match geometry)
+            generateTreesForChunk(q.tx, q.tz, scene, getHeight);
         }
     }
 }
 
-// CUSTOM FLY CONTROLLER (WASD + Mouse)
-const keys = { w: false, a: false, s: false, d: false, q: false, e: false, shift: false };
-let yaw = 0, pitch = 0;
-
-document.addEventListener('pointerlockchange', () => {
-    // Reset inputs when tabbed out
-    if (document.pointerLockElement !== document.body) {
-        for(let k in keys) keys[k] = false;
-    }
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement === document.body) {
-        yaw -= e.movementX * 0.002;
-        pitch -= e.movementY * 0.002;
-        pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, pitch));
-        camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
-    }
-});
-
-document.addEventListener('keydown', (e) => {
-    switch(e.code) {
-        case 'KeyW': keys.w = true; break;
-        case 'KeyA': keys.a = true; break;
-        case 'KeyS': keys.s = true; break;
-        case 'KeyD': keys.d = true; break;
-        case 'KeyQ': keys.q = true; break;
-        case 'KeyE': case 'Space': keys.e = true; break;
-        case 'ShiftLeft': case 'ShiftRight': keys.shift = true; break;
-    }
-});
-document.addEventListener('keyup', (e) => {
-    switch(e.code) {
-        case 'KeyW': keys.w = false; break;
-        case 'KeyA': keys.a = false; break;
-        case 'KeyS': keys.s = false; break;
-        case 'KeyD': keys.d = false; break;
-        case 'KeyQ': keys.q = false; break;
-        case 'KeyE': case 'Space': keys.e = false; break;
-        case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break;
-    }
-});
-
-function updateMovement(delta) {
-    if (document.pointerLockElement !== document.body) return;
-
-    let speed = 250.0 * delta; 
-    if (keys.shift) speed *= 5.0; 
-
-    const moveVector = new THREE.Vector3();
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    const up = new THREE.Vector3(0, 1, 0);
-
-    if (keys.w) moveVector.add(forward);
-    if (keys.s) moveVector.sub(forward);
-    if (keys.d) moveVector.add(right);
-    if (keys.a) moveVector.sub(right);
-    if (keys.e) moveVector.add(up); 
-    if (keys.q) moveVector.sub(up); 
-
-    if (moveVector.lengthSq() > 0) {
-        moveVector.normalize();
-        camera.position.addScaledVector(moveVector, speed);
-    }
-    
-    const currentGroundHeight = getHeight(camera.position.x, camera.position.z);
-    if (camera.position.y < currentGroundHeight + 5) {
-        camera.position.y = currentGroundHeight + 5;
-    }
-}
-
-// Window Scaling
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
 // Single Tick Updater for the Map
-export function updateMap(delta) {
-    updateMovement(delta);
-    updateChunks();
-    waterPlane.position.x = camera.position.x;
-    waterPlane.position.z = camera.position.z;
+export function updateMap(cameraRef) {
+    updateChunks(cameraRef);
+    waterPlane.position.x = cameraRef.position.x;
+    waterPlane.position.z = cameraRef.position.z;
 }

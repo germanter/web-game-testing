@@ -1,7 +1,7 @@
 ///// src/map/objects.js /////
 
 // The Block Template
-export const blockGeo = new THREE.BoxGeometry(4, 4, 4);
+export const blockGeo = new THREE.BoxGeometry(160, 160, 160);
 export const blockMat = new THREE.MeshStandardMaterial({ 
     color: 0xff3333, 
     roughness: 0.7 
