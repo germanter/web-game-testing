@@ -2,7 +2,7 @@
 
 // --- ADJUSTABLE CAMERA PARAMETERS ---
 export const CAM_SETTINGS = {
-    fov: 90,
+    fov: 65,
     nearPlane: 0.1,
     farPlane: 5000,
     initialPos: { x: 0, y: 300, z: 0 },

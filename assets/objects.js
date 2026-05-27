@@ -60,7 +60,7 @@ export const OBJECT_REGISTRY = new Map([
 
     // ── .GLB MODELS (add entries like this when ready) ────────────────────────
     
-    ['my_tree', {
+    ['f22raptor', {
         id: 'f22raptor',
         name: 'F22 Raptor',
         category: 'Jet',
@@ -78,11 +78,13 @@ export const OBJECT_REGISTRY = new Map([
 //   Creates a fresh mesh from the registry entry.
 //   GLB support: add GLTFLoader branch here when needed.
 // ─────────────────────────────────────────────────────────────────────────────
-export function createObjectMesh(typeId) {
-    const def = OBJECT_REGISTRY.get(typeId);
-    if (!def) {
-        console.error(`[ObjectRegistry] Unknown typeId: "${typeId}"`);
-        return null;
+// Replace your existing createObjectMesh function with this:
+
+export async function createObjectMesh(typeId) { 
+    const def = OBJECT_REGISTRY.get(typeId); 
+    if (!def) { 
+        console.error(`[ObjectRegistry] Unknown typeId: "${typeId}"`); 
+        return null; 
     }
 
     // ── Procedural mesh ───────────────────────────────────────────────────────
@@ -91,14 +93,45 @@ export function createObjectMesh(typeId) {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.objectTypeId = typeId;
+        // Also apply default scale to primitives if set
+        const s = def.defaultScale || 1.0;
+        mesh.scale.set(s, s, s);
         return mesh;
     }
 
-    // ── GLB mesh (future) ─────────────────────────────────────────────────────
+    // ── GLB mesh ──────────────────────────────────────────────────────────────
     if (def.glbPath) {
-        console.warn(`[ObjectRegistry] GLB loading not yet implemented for: "${typeId}"`);
-        // TODO: Use THREE.GLTFLoader here
-        return null;
+        return new Promise((resolve, reject) => {
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                def.glbPath,
+                (gltf) => {
+                    const model = gltf.scene;
+                    
+                    // Traverse and apply shadows to all sub-meshes
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    // Tag the root with the ID so we can identify it later
+                    model.userData.objectTypeId = typeId;
+                    
+                    // Apply default scale
+                    const s = def.defaultScale || 1.0;
+                    model.scale.set(s, s, s);
+
+                    resolve(model);
+                },
+                undefined, // Progress callback (optional)
+                (error) => {
+                    console.error(`[ObjectRegistry] Failed to load GLB: "${typeId}"`, error);
+                    resolve(null); // Resolve null so it doesn't break the app
+                }
+            );
+        });
     }
 
     return null;

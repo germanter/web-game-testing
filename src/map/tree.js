@@ -137,7 +137,10 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     trunkGeo.computeVertexNormals();
     trunkGeo.translate(wx, wy + trunkHeight / 2, wz);
     
-    const trunkColor = new THREE.Color(0x231712).lerp(new THREE.Color(0x33241C), prng());
+    // --- WEATHERED / WET BARK PALETTE ---
+
+    // Old: 0x231712 / 0x33241C (Warm, saturated chocolate brown)
+    const trunkColor = new THREE.Color(0x1a1614).lerp(new THREE.Color(0x262220), prng());
     shadeOrganicGeometry(trunkGeo, prng, trunkColor, null, 'trunk');
     geos.push(trunkGeo);
 
@@ -147,9 +150,12 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     let layerRadius = height * 0.32;
     const layerHeight = (height * 0.88) / layers;
 
-    // Base palettes inspired by dense Caucasian and Siberian fir textures
-    const deepCoreColor = new THREE.Color(0x0A190C);
-    const vibrantOuterColor = new THREE.Color(0x1E4620).lerp(new THREE.Color(0x2D5C22), prng());
+    // --- WEATHERED TACTICAL / SIBERIAN TAIGA TREE PALETTE ---
+
+    // Old: 0x0A190C (A bit too rich/emerald for this lighting)
+    const deepCoreColor = new THREE.Color(0x131a14);
+    // Old: 0x1E4620 / 0x2D5C22 (Way too bright, lush, and vibrant)
+    const vibrantOuterColor = new THREE.Color(0x2d362c).lerp(new THREE.Color(0x3a4239), prng());
 
     // Generate unique mathematical characteristics for this specific tree's foliage silhouette
     const branchClusters = 5 + Math.floor(prng() * 4); // 5 to 8 distinct radial growth directions

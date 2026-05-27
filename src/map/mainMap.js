@@ -141,11 +141,18 @@ export function getHeight(x, z) {
 }
 
 // BIOMES & PROCEDURAL VERTEX COLORING
-const colorSand    = new THREE.Color(0xd2b48c);
-const colorLowland = new THREE.Color(0x284715);
-const colorHill    = new THREE.Color(0x5c6631);
-const colorRock    = new THREE.Color(0x3d4045);
-const colorSnow    = new THREE.Color(0xf0f4f8);
+
+
+// Old: 0xd2b48c (Bright Desert Beach)
+const colorSand     = new THREE.Color(0xa69580); 
+// Old: 0x284715 (Bright, lush forest green)
+const colorLowland = new THREE.Color(0x353d2d); 
+// Old: 0x5c6631 (Yellowish mossy green)
+const colorHill    = new THREE.Color(0x4a4736); 
+// Old: 0x3d4045 (Simple clean dark gray)
+const colorRock    = new THREE.Color(0x2b2d30); 
+// Old: 0xf0f4f8 (Clean, bright, soft snow)
+const colorSnow    = new THREE.Color(0xcbd1d6);
 
 function getBiomeColor(y, normal, targetColor) {
     const slope = 1.0 - normal.y; 
@@ -176,12 +183,12 @@ function getBiomeColor(y, normal, targetColor) {
 
 // THREE.JS SETUP
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+scene.background = new THREE.Color(0x5c6570); // Battleship Gray / Tactical Overcast // ### catch 22
 
 const renderDist = 4; 
 const chunkSize = 250; 
-const chunkRes = 80;   
-scene.fog = new THREE.Fog(0x87ceeb, chunkSize * (renderDist - 1.5), chunkSize * renderDist);
+const chunkRes = 70;   
+scene.fog = new THREE.Fog(0x5c6570, chunkSize * (renderDist - 1.5), chunkSize * renderDist); // ### catch 22
 
 export const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);

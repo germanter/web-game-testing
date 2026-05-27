@@ -69,17 +69,18 @@ export function initPlanter(rendererDomElement) {
 }
 
 // ─── LOAD SAVED OBJECTS ───────────────────────────────────────────────────────
-// Call this instead of the old loadSavedMap() in initMap.js
-export function loadSavedObjects() {
-    data.forEach(entry => {
-        const mesh = createObjectMesh(entry.type || 'basic_block');
-        if (!mesh) return;
-        mesh.position.set(entry.x ?? 0, entry.y ?? 0, entry.z ?? 0);
-        if (entry.rx != null) mesh.rotation.set(entry.rx, entry.ry, entry.rz);
-        if (entry.sx != null) mesh.scale.set(entry.sx, entry.sy, entry.sz);
-        scene.add(mesh);
-        _meshToEntry.set(mesh, entry);
-    });
+export function loadSavedObjects() { 
+    data.forEach(async (entry) => { 
+        const mesh = await createObjectMesh(entry.type || 'basic_block'); 
+        if (!mesh) return; 
+
+        mesh.position.set(entry.x ?? 0, entry.y ?? 0, entry.z ?? 0); 
+        if (entry.rx != null) mesh.rotation.set(entry.rx, entry.ry, entry.rz); 
+        if (entry.sx != null) mesh.scale.set(entry.sx, entry.sy, entry.sz); 
+        
+        scene.add(mesh); 
+        _meshToEntry.set(mesh, entry); 
+    }); 
 }
 
 // ─── MODE TOGGLE ──────────────────────────────────────────────────────────────
@@ -108,37 +109,34 @@ export function setTransformMode(mode) {
 }
 
 // ─── SPAWN FROM INVENTORY ─────────────────────────────────────────────────────
-// Spawns the object on the terrain directly in front of the camera
-export function spawnFromInventory(typeId) {
+export async function spawnFromInventory(typeId) { 
     if (!_active) return; // safety guard
 
-    // Project a ray forward from camera and find terrain height at that point
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    const spawnDist = 400; // world units ahead
+    const spawnDist = 400; 
     const spawnX = camera.position.x + forward.x * spawnDist;
     const spawnZ = camera.position.z + forward.z * spawnDist;
 
-    // getHeight is not directly importable here without a circular dep,
-    // so we use a terrain raycast instead — safer and more accurate
+    // Grab terrain height before await so we don't drift if camera moves
     const terrainY = _getTerrainHeightAt(spawnX, spawnZ);
 
-    const mesh = createObjectMesh(typeId);
+    // Await the new async loader
+    const mesh = await createObjectMesh(typeId);
     if (!mesh) return;
 
     mesh.position.set(spawnX, terrainY + 2, spawnZ);
     scene.add(mesh);
 
-    // Register in save data
+    // Register in save data (grab the actual loaded scale in case of defaultScale)
     const entry = {
         type: typeId,
         x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
         rx: 0, ry: 0, rz: 0,
-        sx: 1, sy: 1, sz: 1,
+        sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
     };
     data.push(entry);
     _meshToEntry.set(mesh, entry);
 
-    // Auto-select so user can immediately position it
     _select(mesh);
 }
 
@@ -157,14 +155,13 @@ function _deselect() {
 }
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
-export function deleteSelected() {
-    if (!_selected) return;
-    const mesh = _selected;
+export function deleteSelected() { 
+    if (!_selected) return; 
+    const mesh = _selected; 
     _deselect();
 
     scene.remove(mesh);
 
-    // Remove from save data
     const entry = _meshToEntry.get(mesh);
     if (entry) {
         const idx = data.indexOf(entry);
@@ -172,9 +169,19 @@ export function deleteSelected() {
         _meshToEntry.delete(mesh);
     }
 
-    mesh.geometry.dispose();
-    if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
-    else mesh.material.dispose();
+    // GLB deep disposal traversing group sub-meshes
+    mesh.traverse((node) => {
+        if (node.isMesh) {
+            if (node.geometry) node.geometry.dispose();
+            if (node.material) {
+                if (Array.isArray(node.material)) {
+                    node.material.forEach(m => m.dispose());
+                } else {
+                    node.material.dispose();
+                }
+            }
+        }
+    });
 }
 
 // ─── SYNC POSITION / ROTATION / SCALE → SAVE DATA ────────────────────────────
@@ -192,13 +199,10 @@ function _syncToData(mesh) {
     entry.sz = mesh.scale.z;
 }
 
-// ─── POINTER DOWN — selection and deselection ─────────────────────────────────
-function _onPointerDown(e) {
-    // Only act in planter mode
+// ─── POINTER DOWN (Look closely at step 1) ────────────────────────────────────
+function _onPointerDown(e) { 
     if (!_active) return;
-    // Let gizmo handle its own drag
-    if (_isDragging) return;
-    // Ignore UI panel clicks
+    if (_isDragging) return; 
     if (e.target.closest('#planter-panel') || e.target.closest('button')) return;
 
     _mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
@@ -207,14 +211,23 @@ function _onPointerDown(e) {
 
     // 1. Try to hit an already-placed object
     const placed = Array.from(_meshToEntry.keys());
-    const hits = _raycaster.intersectObjects(placed, false);
+    
+    // 🔥 CRITICAL: recursive must be TRUE to hit GLB inner-meshes
+    const hits = _raycaster.intersectObjects(placed, true); 
     if (hits.length > 0) {
-        _select(hits[0].object);
-        return;
+        // Walk up the parent tree to find the root mesh we saved in _meshToEntry
+        let hitObj = hits[0].object;
+        while (hitObj && !_meshToEntry.has(hitObj)) {
+            hitObj = hitObj.parent;
+        }
+        
+        if (hitObj) {
+            _select(hitObj);
+            return;
+        }
     }
 
-    // 2. Hit terrain → place object if inventory type is selected
-    // (Deselect current if clicking open terrain without a spawn type)
+    // 2. Hit terrain
     const terrainMeshes = Array.from(chunks.values());
     const terrainHits   = _raycaster.intersectObjects(terrainMeshes, false);
     if (terrainHits.length > 0) {
