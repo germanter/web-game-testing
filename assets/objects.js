@@ -69,6 +69,17 @@ export const OBJECT_REGISTRY = new Map([
         createGeometry: null,
         createMaterial: null,
         defaultScale: 100.0,
+    }],
+
+    ['b2spirit', {
+        id: 'b2spirit',
+        name: 'B2 Spirit',
+        category: 'Bomber',
+        icon: '✈️',
+        glbPath: './assets/models/b2spirit.glb',  // ← path relative to index.html
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
     }]
 
 ]);

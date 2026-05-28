@@ -26,6 +26,9 @@ let _selected     = null;    // currently selected THREE.Mesh
 let _isDragging   = false;   // TransformControls gizmo drag in progress
 let _tfMode       = 'translate';
 
+// Track the next available UUID (ensures IDs are endless and unique)
+export let uuidHandler = 1;
+
 // Object tracking: mesh → save-data entry (live reference to data[] element)
 const _meshToEntry = new Map();
 
@@ -71,6 +74,11 @@ export function initPlanter(rendererDomElement) {
 // ─── LOAD SAVED OBJECTS ───────────────────────────────────────────────────────
 export function loadSavedObjects() { 
     data.forEach(async (entry) => { 
+        // Update the UUID handler to always be +1 higher than the highest existing object
+        if (entry.uuid && entry.uuid >= uuidHandler) {
+            uuidHandler = entry.uuid + 1;
+        }
+
         const mesh = await createObjectMesh(entry.type || 'basic_block'); 
         if (!mesh) return; 
 
@@ -88,7 +96,6 @@ export function togglePlanterMode() {
     _active = !_active;
 
     if (_active) {
-        // Release pointer lock so the mouse is free for clicking/gizmo
         if (document.pointerLockElement) document.exitPointerLock();
         setPlanterModeFlag(true);
     } else {
@@ -105,7 +112,6 @@ export function isPlanterActive() { return _active; }
 export function setTransformMode(mode) {
     _tfMode = mode;
     if (_tc) _tc.setMode(mode);
-    // UI state already updated by debugController internally via callback
 }
 
 // ─── SPAWN FROM INVENTORY ─────────────────────────────────────────────────────
@@ -127,8 +133,14 @@ export async function spawnFromInventory(typeId) {
     mesh.position.set(spawnX, terrainY + 2, spawnZ);
     scene.add(mesh);
 
-    // Register in save data (grab the actual loaded scale in case of defaultScale)
+    // Generate the incremental UUID and pull current input Tag directly from UI
+    const currentUUID = uuidHandler++;
+    const currentTag = DC.getCurrentTag();
+
+    // Register in save data
     const entry = {
+        uuid: currentUUID,
+        tag: currentTag,
         type: typeId,
         x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
         rx: 0, ry: 0, rz: 0,
@@ -169,7 +181,6 @@ export function deleteSelected() {
         _meshToEntry.delete(mesh);
     }
 
-    // GLB deep disposal traversing group sub-meshes
     mesh.traverse((node) => {
         if (node.isMesh) {
             if (node.geometry) node.geometry.dispose();
@@ -199,7 +210,7 @@ function _syncToData(mesh) {
     entry.sz = mesh.scale.z;
 }
 
-// ─── POINTER DOWN (Look closely at step 1) ────────────────────────────────────
+// ─── POINTER DOWN ─────────────────────────────────────────────────────────────
 function _onPointerDown(e) { 
     if (!_active) return;
     if (_isDragging) return; 
@@ -209,13 +220,10 @@ function _onPointerDown(e) {
     _mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     _raycaster.setFromCamera(_mouse, camera);
 
-    // 1. Try to hit an already-placed object
     const placed = Array.from(_meshToEntry.keys());
     
-    // 🔥 CRITICAL: recursive must be TRUE to hit GLB inner-meshes
     const hits = _raycaster.intersectObjects(placed, true); 
     if (hits.length > 0) {
-        // Walk up the parent tree to find the root mesh we saved in _meshToEntry
         let hitObj = hits[0].object;
         while (hitObj && !_meshToEntry.has(hitObj)) {
             hitObj = hitObj.parent;
@@ -227,7 +235,6 @@ function _onPointerDown(e) {
         }
     }
 
-    // 2. Hit terrain
     const terrainMeshes = Array.from(chunks.values());
     const terrainHits   = _raycaster.intersectObjects(terrainMeshes, false);
     if (terrainHits.length > 0) {
@@ -237,15 +244,16 @@ function _onPointerDown(e) {
 
 // ─── KEY DOWN — shortcuts ─────────────────────────────────────────────────────
 function _onKeyDown(e) {
-    // Tab: toggle fly / planter (works in both modes)
     if (e.code === 'Tab') {
         e.preventDefault();
         togglePlanterMode();
         return;
     }
 
-    // Everything below only in planter mode
     if (!_active) return;
+
+    // Notice we ignore keys if the user is typing in the Tag input field!
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
 
     switch (e.code) {
         case 'KeyT':      setTransformMode('translate'); break;
@@ -255,7 +263,6 @@ function _onKeyDown(e) {
         case 'Backspace': deleteSelected();              break;
         case 'Escape':    _deselect();                   break;
 
-        // Uniform scale shortcuts — handy quick adjustment
         case 'BracketRight': // ] → scale up 10%
             if (_selected) {
                 _selected.scale.multiplyScalar(1.1);
@@ -274,7 +281,6 @@ function _onKeyDown(e) {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-// Approximate terrain height by raycasting straight down onto loaded chunks
 function _getTerrainHeightAt(x, z) {
     const origin = new THREE.Vector3(x, 2000, z);
     const dir    = new THREE.Vector3(0, -1, 0);

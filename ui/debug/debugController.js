@@ -100,6 +100,12 @@ function _injectStyles() {
         .pp-btn.btn-mode-toggle.planter-active {
             background: #4ade80; color: #111; border-color: #4ade80;
         }
+        #pp-tag-input {
+            flex: 1; background: #1e2530; border: 1px solid #3a4050;
+            color: #ccd; border-radius: 6px; padding: 6px 8px;
+            font-size: 12px; outline: none; width: 100%; box-sizing: border-box;
+        }
+        #pp-tag-input:focus { border-color: #3b82f6; }
         #pp-selected-info {
             margin-top: 8px; padding: 7px 10px;
             background: rgba(255,255,255,0.04); border-radius: 6px;
@@ -186,7 +192,6 @@ function _createInstructions() {
     _el.instructions = el;
 }
 
-// Called from initMap.js – wires pointer lock to the overlay
 export function setupPointerLockUI(canLockFn) {
     if (!_el.instructions) return;
 
@@ -201,8 +206,6 @@ export function setupPointerLockUI(canLockFn) {
             _el.instructions.style.opacity = '0';
             setTimeout(() => { _el.instructions.style.display = 'none'; }, 300);
         } else {
-            // Only show the overlay if this unlock was NOT caused by entering
-            // planter mode. canLockFn() returns false while planter is active.
             if (!canLockFn || canLockFn()) {
                 _el.instructions.style.display = 'flex';
                 setTimeout(() => { _el.instructions.style.opacity = '1'; }, 10);
@@ -212,7 +215,6 @@ export function setupPointerLockUI(canLockFn) {
 }
 
 // ─── PLANTER PANEL ────────────────────────────────────────────────────────────
-// _planterCallbacks is set by initPlanterUI() when objPlanter initialises
 let _planterCbs = {};
 let _currentTfMode = 'translate';
 let _activeInvBtn  = null;
@@ -238,6 +240,12 @@ function _createPlanterPanel() {
             <button id="pp-delete" class="pp-btn btn-delete" title="Delete selected [Del]">🗑 Delete</button>
         </div>
 
+        <div class="pp-section-title">Object Tag</div>
+        <div class="pp-row" style="display: flex; gap: 6px; align-items: center;">
+            <input type="text" id="pp-tag-input" placeholder="Tag (optional)..." />
+            <button id="pp-tag-clear" class="pp-btn btn-delete" title="Clear Tag" style="flex: 0 0 32px; min-width: 32px; padding: 6px 0;">✖</button>
+        </div>
+
         <div id="pp-selected-info">No object selected</div>
 
         <div class="pp-section-title">Inventory</div>
@@ -246,7 +254,7 @@ function _createPlanterPanel() {
     document.body.appendChild(panel);
     _el.planterPanel = panel;
 
-    // Bind static buttons (callbacks injected later by initPlanterUI)
+    // Bind static buttons
     panel.querySelector('#pp-mode-toggle').addEventListener('click', (e) => {
         e.stopPropagation();
         _planterCbs.onToggle?.();
@@ -264,6 +272,13 @@ function _createPlanterPanel() {
         e.stopPropagation();
         _planterCbs.onDelete?.();
     });
+    
+    // Bind Tag Clear Button
+    panel.querySelector('#pp-tag-clear').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tagInput = panel.querySelector('#pp-tag-input');
+        if (tagInput) tagInput.value = '';
+    });
 }
 
 function _setTfMode(mode) {
@@ -275,15 +290,12 @@ function _setTfMode(mode) {
     _planterCbs.onTransformMode?.(mode);
 }
 
-// Called by objPlanter.initPlanter() — wires live callbacks and builds inventory
 export function initPlanterUI(callbacks, objectRegistry) {
     _planterCbs = callbacks;
 
-    // Build inventory buttons from registry
     const container = _el.planterPanel.querySelector('#pp-inventory');
     container.innerHTML = '';
 
-    // Group by category
     const categories = new Map();
     for (const [id, def] of objectRegistry) {
         if (!categories.has(def.category)) categories.set(def.category, []);
@@ -305,7 +317,6 @@ export function initPlanterUI(callbacks, objectRegistry) {
             btn.style.width = '100%';
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // Toggle active highlight
                 if (_activeInvBtn) _activeInvBtn.classList.remove('active-inv');
                 _activeInvBtn = btn;
                 btn.classList.add('active-inv');
@@ -316,7 +327,15 @@ export function initPlanterUI(callbacks, objectRegistry) {
     }
 }
 
-// ─── PUBLIC UPDATE FUNCTIONS (called from objPlanter / initMap) ───────────────
+// ─── PUBLIC HELPERS & UPDATE FUNCTIONS ────────────────────────────────────────
+
+// Gets the currently typed tag from the UI text field. Returns null if empty.
+export function getCurrentTag() {
+    const input = document.getElementById('pp-tag-input');
+    if (!input) return null;
+    const val = input.value.trim();
+    return val !== '' ? val : null;
+}
 
 export function onPlanterModeChanged(isActive) {
     if (_el.planterPanel) {
@@ -339,12 +358,9 @@ export function onPlanterModeChanged(isActive) {
         }
     }
 
-    // --- FIX: Manage pointer lock state seamlessly ---
     if (!isActive) {
-        // Re-lock the mouse to document body when returning to fly mode
         document.body.requestPointerLock();
     } else {
-        // Ensure the mouse is unlocked when opening the planter panel
         if (document.pointerLockElement) {
             document.exitPointerLock();
         }
@@ -373,7 +389,6 @@ export function onObjectDeselected() {
     }
 }
 
-// Called each frame to update position while dragging
 export function updateSelectedInfo(mesh) {
     if (!mesh) return;
     const el = document.getElementById('pp-selected-info');
@@ -413,7 +428,6 @@ export function updateCrosshairBuildMode(isBuildMode) {
 }
 
 export function showSaveNotification() {
-    // Temporary banner – doesn't hijack instructions overlay
     let banner = document.getElementById('save-banner');
     if (!banner) {
         banner = document.createElement('div');
@@ -434,6 +448,5 @@ export function showSaveNotification() {
     banner._t = setTimeout(() => { banner.style.opacity = '0'; }, 1500);
 }
 
-// Expose element references for modules that need them (read-only via getter)
 export function getStatsEl()  { return _el.stats; }
 export function getBiomeEl()  { return _el.biome; }
