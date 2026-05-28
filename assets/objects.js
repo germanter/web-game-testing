@@ -68,7 +68,7 @@ export const OBJECT_REGISTRY = new Map([
         glbPath: './assets/models/f22raptor.glb',  // ← path relative to index.html
         createGeometry: null,
         createMaterial: null,
-        defaultScale: 1.0,
+        defaultScale: 100.0,
     }]
 
 ]);
