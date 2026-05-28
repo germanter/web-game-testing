@@ -1,6 +1,6 @@
 ///// src/map/mainMap.js /////
 import { generateTreesForChunk, disposeTreesForChunk } from './tree.js';
-import { WORLD_SEED, MAP, SCENE, TERRAIN } from '../global.js';
+import { WORLD_SEED, MAP, SCENE, TERRAIN, TERRAIN_GEN } from '../global.js';
 
 // DJB2 String Hashing function
 function hashString(str) {
@@ -112,31 +112,60 @@ function smoothstep(edge0, edge1, x) {
 }
 
 export function getMacroBiomeValue(x, z) {
-    let macro = fbm(x * 0.00025, z * 0.00025, 3, 0.5, 2.0);
+    let macro = fbm(
+        x * TERRAIN_GEN.macroScale, 
+        z * TERRAIN_GEN.macroScale, 
+        TERRAIN_GEN.macroOctaves, 
+        TERRAIN_GEN.macroPersistence, 
+        TERRAIN_GEN.macroLacunarity
+    );
     return (macro + 1.0) * 0.5; 
 }
 
 export function getHeight(x, z) {
     const macro = getMacroBiomeValue(x, z);
 
-    let plains = fbm(x * 0.001, z * 0.001, 2, 0.5, 2.0);
-    plains = (plains + 0.5) * 12.0; 
+    let plains = fbm(
+        x * TERRAIN_GEN.plainsScale, 
+        z * TERRAIN_GEN.plainsScale, 
+        TERRAIN_GEN.plainsOctaves, 
+        TERRAIN_GEN.plainsPersistence, 
+        TERRAIN_GEN.plainsLacunarity
+    );
+    plains = (plains + TERRAIN_GEN.plainsOffset) * TERRAIN_GEN.plainsHeightMult; 
 
-    let hills = fbm(x * 0.002, z * 0.002, 4, 0.5, 2.0);
+    let hills = fbm(
+        x * TERRAIN_GEN.hillsScale, 
+        z * TERRAIN_GEN.hillsScale, 
+        TERRAIN_GEN.hillsOctaves, 
+        TERRAIN_GEN.hillsPersistence, 
+        TERRAIN_GEN.hillsLacunarity
+    );
     hills = (hills + 1.0) * 0.5; 
-    hills = Math.pow(hills, 1.8) * 90.0; 
+    hills = Math.pow(hills, TERRAIN_GEN.hillsExponent) * TERRAIN_GEN.hillsHeightMult; 
 
-    let mountains = ridgedMultifractal(x * 0.0025, z * 0.0025, 6);
-    mountains = (mountains * 450.0) - 20.0; 
+    let mountains = ridgedMultifractal(
+        x * TERRAIN_GEN.mountainsScale, 
+        z * TERRAIN_GEN.mountainsScale, 
+        TERRAIN_GEN.mountainsOctaves
+    );
+    mountains = (mountains * TERRAIN_GEN.mountainsHeightMult) - TERRAIN_GEN.mountainsOffset; 
 
-    let plainsToHillsBlend = smoothstep(0.25, 0.45, macro);
+    let plainsToHillsBlend = smoothstep(TERRAIN_GEN.plainsToHillsStart, TERRAIN_GEN.plainsToHillsEnd, macro);
     let terrainHeight = lerp(plains, hills, plainsToHillsBlend);
 
-    let hillsToMountainsBlend = smoothstep(0.60, 0.80, macro);
+    let hillsToMountainsBlend = smoothstep(TERRAIN_GEN.hillsToMountStart, TERRAIN_GEN.hillsToMountEnd, macro);
     terrainHeight = lerp(terrainHeight, mountains, hillsToMountainsBlend);
 
-    let micro = fbm(x * 0.05, z * 0.05, 2, 0.5, 2.0) * 1.5;
-    return terrainHeight + micro - 5.0; 
+    let micro = fbm(
+        x * TERRAIN_GEN.microScale, 
+        z * TERRAIN_GEN.microScale, 
+        TERRAIN_GEN.microOctaves, 
+        TERRAIN_GEN.microPersistence, 
+        TERRAIN_GEN.microLacunarity
+    ) * TERRAIN_GEN.microHeightMult;
+    
+    return terrainHeight + micro - TERRAIN_GEN.globalHeightOffset; 
 }
 
 // BIOMES & PROCEDURAL VERTEX COLORING (Sourced from global config)
@@ -269,7 +298,6 @@ function updateChunks(cameraRef) {
     }
     chunkQueue.sort((a, b) => a.distSq - b.distSq);
     
-    // --- MODIFIED: Terrain AND Tree Disposal ---
     for(let [key, mesh] of chunks.entries()) {
         if(!activeKeys.has(key)) {
             // Dispose Terrain
@@ -283,7 +311,6 @@ function updateChunks(cameraRef) {
         }
     }
 
-    // --- MODIFIED: Terrain AND Tree Generation ---
     if(chunkQueue.length > 0) {
         const q = chunkQueue.shift();
         if(Math.abs(q.tx - Math.round(cameraRef.position.x/MAP.chunkSize)) <= MAP.renderDist && 

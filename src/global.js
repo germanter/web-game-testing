@@ -29,45 +29,44 @@ export const MAP = {
     chunkRes: 70,                 // Vertex resolution per chunk
 };
 
-// ── SCENE ENVIRONMENT & LIGHTING ───────────────────────────────────────
 export const SCENE = {
-    background: 0x5c6570,         // Sky/Background color (Tactical Overcast / Battleship Gray)
-    fogColor: 0x5c6570,           // Fog color (matches background perfectly)
-    fogStartOffset: 1.5,          // Subtracted from renderDist for fog start distance
-    sunColor: 0xfff5e6,           // Main directional light color
-    sunIntensity: 1.3,            // Main directional light brightness
-    sunPos: { x: 2000, y: 3000, z: 1000 }, // Position of the sun light
-    ambientColor: 0x405060,       // Global ambient lighting color
-    ambientIntensity: 0.6,        // Global ambient lighting brightness
+    background: 0x9fa4a6,         // Muted, cold overcast gray sky
+    fogColor: 0x9fa4a6,           // Fog matches the heavy, low-hanging overcast mist
+    fogStartOffset: 1.5,          // REVERTED to your original layout offset
+    sunColor: 0xeeeeee,           // Diffused, flat white light (no warm yellow sun)
+    sunIntensity: 2.0,            // Lowered to mimic flat overcast day
+    sunPos: { x: 2000, y: 3000, z: 1000 }, // REVERTED to your original sun position
+    ambientColor: 0x5a5d64,       // Cold, slate-gray ambient bounce light
+    ambientIntensity: 0.7,        // High ambient ratio to eliminate harsh shadows
 };
 
 // ── TERRAIN BIOME & WATER COLORS ───────────────────────────────────────
 export const TERRAIN = {
-    colorSand: 0xa69580,          // Beach/lowland sand (Bright Desert Beach style)
-    colorLowland: 0x353d2d,       // Lush/forest lower elevations (Dark rich green)
-    colorHill: 0x4a4736,          // Mossy/dry mid elevations
-    colorRock: 0x2b2d30,          // Mountain rock (Clean dark gray)
-    colorSnow: 0xcbd1d6,          // High altitude snow (Bright soft snow)
-    waterColor: 0x1e5a8f,         // Ocean/water base color
-    waterOpacity: 0.85,           // Water surface transparency
-    waterHeight: 2.0,             // Universal flat plane height for water
+    colorSand: 0x3d352e,          // Wet, muddy banks / puddle edges
+    colorLowland: 0x2b241f,       // Deep, dark forest mud and decayed leaves
+    colorHill: 0x423b32,          // Muted leaf-littered soil and damp earth
+    colorRock: 0x3a3d40,          // Wet, cold stone gray
+    colorSnow: 0xd2d7df,          // Dirty, slushy winter snow patches
+    waterColor: 0x484b4f,         // Steel-gray, muddy puddle/river color
+    waterOpacity: 0.85,           // REVERTED to your original opacity
+    waterHeight: 2.0,             // REVERTED to your original height
 };
 
 // ── TREE GENERATOR PARAMETERS ──────────────────────────────────────────
 export const TREE = {
-    density: 0.00003,             // Base probability/frequency of trees spawning across the map
-    minHeight: 50.0,              // Shortest tree scale (Tall, grand silhouette)
-    maxHeight: 100.0,             // Tallest tree scale
-    minElevation: 10.0,           // Lowest ground height for trees (safely stays above water)
-    maxElevation: 62.0,           // Highest ground height for trees (stops before rocky mountain peaks)
-    maxSlope: 0.14,               // Max terrain steepness for trees (prevents cliff side spawns)
+    density: 0.00003,             // REVERTED to your original density
+    minHeight: 40.0,              // REVERTED to your original scale
+    maxHeight: 45.0,             // REVERTED to your original scale
+    minElevation: 10.0,           // REVERTED to your original elevation
+    maxElevation: 62.0,           // REVERTED to your original elevation
+    maxSlope: 0.14,               // REVERTED to your original slope
     
-    // Tree visual palette
-    colorTrunkDark: 0x1a1614,     // Base gradient for bark (Weathered / dark organic brown)
-    colorTrunkLight: 0x262220,    // Highlight gradient for bark
-    colorFoliageCore: 0x131a14,   // Deep shadowed interior core of foliage 
-    colorFoliageOuterMin: 0x2d362c, // Outer needle color minimum gradient
-    colorFoliageOuterMax: 0x3a4239, // Outer needle color maximum gradient
+    // Tree visual palette (Muted, bare, winter forest tones)
+    colorTrunkDark: 0x1c1a18,     // Wet, near-black tree bark base
+    colorTrunkLight: 0x383430,    // Weathered, ash-brown bark highlights
+    colorFoliageCore: 0x222621,   // Dead, dark olive/decayed pine core
+    colorFoliageOuterMin: 0x2d302a, // Dead/dormant winter needles minimum
+    colorFoliageOuterMax: 0x3b3f37, // Highly desaturated, cold military green max
 };
 
 // ── DEBUG UI BIOME THRESHOLDS & COLORS ─────────────────────────────────
@@ -77,4 +76,56 @@ export const UI_BIOME = {
     hillsMax: 0.60,       hillsColor: '#eab308',       hillsName: 'Rolling Hills',
     hillsMountMax: 0.80,  hillsMountColor: '#f97316',  hillsMountName: 'Hills/Mountains Transition',
     mountainsColor: '#ef4444', mountainsName: 'High Alpine Mountains',
+};
+
+
+// ── PROCEDURAL TERRAIN GENERATION PARAMETERS ───────────────────────────
+
+// These mathematically shape the noise maps, heights, and chances of biomes spawning.
+
+export const TERRAIN_GEN = {
+    // 1. MACRO NOISE (Determines the global layout / chance of biomes)
+    macroScale: 0.00025,       // Zoom level of the biome map
+    macroOctaves: 3,           // Detail passes for biome shapes
+    macroPersistence: 0.5,     // How much each detail pass contributes
+    macroLacunarity: 2.0,      // Frequency multiplier per detail pass
+
+    // 2. PLAINS TERRAIN (Flat, low-lying areas)
+    plainsScale: 0.001,
+    plainsOctaves: 2,
+    plainsPersistence: 0.5,
+    plainsLacunarity: 2.0,
+    plainsHeightMult: 12.0,    // Max height of plains
+    plainsOffset: 0.5,         // Base elevation boost
+
+    // 3. HILLS TERRAIN (Rolling, bumpy mid-elevations)
+    hillsScale: 0.002,
+    hillsOctaves: 4,
+    hillsPersistence: 0.5,
+    hillsLacunarity: 2.0,
+    hillsHeightMult: 90.0,     // Max height of hills
+    hillsExponent: 1.8,        // Pushes the valleys down and peaks up (shaping)
+
+    // 4. MOUNTAINS TERRAIN (Sharp, ridged peaks)
+    mountainsScale: 0.0025,
+    mountainsOctaves: 6,       // High octaves for jagged rocky detail
+    mountainsHeightMult: 450.0,// Extreme height multiplier for peaks
+    mountainsOffset: 20.0,     // Pushes mountains down slightly to blend better
+
+    // 5. MICRO NOISE (Tiny rocks, bumps, and variance across ALL terrain)
+    microScale: 0.05,
+    microOctaves: 2,
+    microPersistence: 0.5,
+    microLacunarity: 2.0,
+    microHeightMult: 1.5,      // How tall the small bumps are
+
+    // 6. BIOME BLENDING THRESHOLDS (Based on Macro noise 0.0 to 1.0)
+    // Changing these alters the "chance" or "amount" of each biome
+    plainsToHillsStart: 0.25,  // Below 0.25 is purely Plains
+    plainsToHillsEnd: 0.45,    // At 0.45, it is purely Hills
+    hillsToMountStart: 0.60,   // Below 0.60 is mostly Hills
+    hillsToMountEnd: 0.80,     // Above 0.80 is purely Mountains
+
+    // 7. GLOBAL OFFSET
+    globalHeightOffset: 5.0    // Sinks the entire world down by this amount
 };
