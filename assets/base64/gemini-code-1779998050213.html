@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skydome Base64 Engine</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: monospace;
+        }
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            cursor: pointer;
+            z-index: 50;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="blocker">
+        <h2>Click to Look Around</h2>
+        <p>W, A, S, D to fly. ESC to release mouse.</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        
+        // 1. Import the Base64 string directly from your local asset file
+        import { SKY_DATA_URI } from './sky_asset.js';
+
+        // 2. Core Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // 3. Skydome Geometry & Material
+        const domeGeometry = new THREE.SphereGeometry(1000, 60, 40);
+        domeGeometry.scale(-1, 1, 1); // Invert faces
+        
+        const domeMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        const skyDome = new THREE.Mesh(domeGeometry, domeMaterial);
+        scene.add(skyDome);
+
+        const gridHelper = new THREE.GridHelper(1000, 100, 0x444444, 0x222222);
+        skyDome.position.y = -30; // Adjust this number until the blue part is hidden under your map
+        scene.add(gridHelper);
+
+        // 4. Auto-Load Texture from the imported string
+        const textureLoader = new THREE.TextureLoader();
+        
+        textureLoader.load(SKY_DATA_URI, (texture) => {
+            texture.colorSpace = THREE.SRGBColorSpace;
+            
+            // Memory optimizations to prevent 2K base64 VRAM bloat
+            texture.generateMipmaps = false;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            
+            domeMaterial.map = texture;
+            domeMaterial.color.setHex(0xffffff);
+            domeMaterial.needsUpdate = true;
+            console.log("Skydome texture successfully loaded from sky_asset.js");
+        });
+
+        // 5. Controls (PointerLock + WASD)
+        const controls = new PointerLockControls(camera, document.body);
+        const blocker = document.getElementById('blocker');
+
+        blocker.addEventListener('click', () => controls.lock());
+        controls.addEventListener('lock', () => blocker.style.display = 'none');
+        controls.addEventListener('unlock', () => blocker.style.display = 'flex');
+        scene.add(controls.getObject());
+
+        const move = { forward: false, backward: false, left: false, right: false };
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        const speed = 400.0; 
+
+        const onKeyDown = (event) => {
+            switch (event.code) {
+                case 'KeyW': move.forward = true; break;
+                case 'KeyA': move.left = true; break;
+                case 'KeyS': move.backward = true; break;
+                case 'KeyD': move.right = true; break;
+            }
+        };
+
+        const onKeyUp = (event) => {
+            switch (event.code) {
+                case 'KeyW': move.forward = false; break;
+                case 'KeyA': move.left = false; break;
+                case 'KeyS': move.backward = false; break;
+                case 'KeyD': move.right = false; break;
+            }
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+        // 6. Render Loop
+        let prevTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            if (controls.isLocked === true) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(move.forward) - Number(move.backward);
+                direction.x = Number(move.right) - Number(move.left);
+                direction.normalize(); 
+
+                if (move.forward || move.backward) velocity.z -= direction.z * speed * delta;
+                if (move.left || move.right) velocity.x -= direction.x * speed * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+            }
+
+            renderer.render(scene, camera);
+            prevTime = time;
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

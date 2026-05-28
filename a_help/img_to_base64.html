@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset to Base64 Compiler</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 30px;
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: monospace;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #1e1e1e;
+            padding: 25px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        h2 {
+            margin-top: 0;
+            color: #00ff66;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        .file-input-wrapper {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #444;
+            text-align: center;
+            background: #151515;
+            cursor: pointer;
+        }
+        .file-input-wrapper:hover {
+            border-color: #00ff66;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .btn {
+            background: #00ff66;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: monospace;
+            border-radius: 4px;
+            display: none;
+            width: 100%;
+            margin-top: 15px;
+        }
+        .btn:active {
+            background: #00cc55;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: #151515;
+            color: #888;
+            border: 1px solid #333;
+            padding: 10px;
+            box-sizing: border-box;
+            resize: none;
+            margin-top: 15px;
+            display: none;
+            font-size: 11px;
+            word-break: break-all;
+        }
+        .info {
+            font-size: 12px;
+            color: #8a8a8a;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Asset Compiler</h2>
+    <p class="info">Select your 2K image to turn it into a zero-dependency JS string variable.</p>
+    
+    <div class="file-input-wrapper" onclick="document.getElementById('file-picker').click()">
+        <span id="prompt-text">Click to browse or drop image here</span>
+        <input type="file" id="file-picker" accept="image/*">
+    </div>
+
+    <div id="file-details" class="info" style="display:none; color: #00ff66;"></div>
+
+    <button id="copy-btn" class="btn">COPY BASE64 CODE</button>
+    <textarea id="output" readonly></textarea>
+</div>
+
+<script>
+    const filePicker = document.getElementById('file-picker');
+    const output = document.getElementById('output');
+    const copyBtn = document.getElementById('copy-btn');
+    const fileDetails = document.getElementById('file-details');
+    const promptText = document.getElementById('prompt-text');
+
+    filePicker.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Show file data info
+        const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+        fileDetails.innerText = `Loaded: ${file.name} (${sizeInMB} MB)`;
+        fileDetails.style.display = 'block';
+        promptText.innerText = "Change Selected Image";
+
+        const reader = new FileReader();
+        
+        reader.onload = function(event) {
+            const base64String = event.target.result;
+            
+            // Format it exactly as a clean JS declaration for your sky_asset.js file
+            output.value = `const SKY_DATA_URI = "${base64String}";`;
+            
+            // Unhide elements once processing completes
+            output.style.display = 'block';
+            copyBtn.style.display = 'block';
+            copyBtn.innerText = "COPY BASE64 CODE";
+            copyBtn.style.background = "#00ff66";
+        };
+
+        reader.readAsDataURL(file);
+    });
+
+    // Handle copying to system clipboard instantly
+    copyBtn.addEventListener('click', function() {
+        output.select();
+        output.setSelectionRange(0, 999999); // Safe range for huge text blocks
+
+        navigator.clipboard.writeText(output.value).then(() => {
+            copyBtn.innerText = "COPIED TO CLIPBOARD!";
+            copyBtn.style.background = "#ffffff";
+        }).catch(err => {
+            console.error("Fallback execution: ", err);
+            alert("Failed to auto-copy. Manually select text from the box below.");
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -6,8 +6,9 @@
 //   • Fly ↔ Planter mode toggling
 //   • TransformControls (translate / rotate / scale gizmo)
 //   • Object selection via raycasting
+//   • Group multi-selection via Tag View 
 //   • Spawn from OBJECT_REGISTRY inventory
-//   • Delete selected object
+//   • Delete selected object/group
 //   • Runtime ↔ save-data sync
 //
 // UI is NEVER touched directly here — all feedback goes through DebugController.
@@ -22,13 +23,16 @@ import { data }                        from '../config.js';
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let _active       = false;   // true = planter mode, false = fly mode
 let _tc           = null;    // THREE.TransformControls instance
-let _selected     = null;    // currently selected THREE.Mesh
+let _selected     = null;    // currently selected THREE.Mesh OR THREE.Group
 let _isDragging   = false;   // TransformControls gizmo drag in progress
 let _tfMode       = 'translate';
-let _clipboard    = null;    // memory for Ctrl+C / Ctrl+X
+let _clipboard    = null;    // memory for Ctrl+C / Ctrl+X ({ type: 'single'|'group', items: [] })
 
 // Track the next available UUID (ensures IDs are endless and unique)
 export let uuidHandler = 1;
+
+// Multi-select grouping logic mechanism
+const _selectionGroup = new THREE.Group();
 
 // Object tracking: mesh → save-data entry (live reference to data[] element)
 const _meshToEntry = new Map();
@@ -39,6 +43,8 @@ const _mouse     = new THREE.Vector2();
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 export function initPlanter(rendererDomElement) {
+    scene.add(_selectionGroup); // Core group for multi-select transforms
+
     // ── TransformControls setup (mirrors 3dArena.html pattern) ────────────────
     _tc = new THREE.TransformControls(camera, rendererDomElement);
     _tc.setSize(0.8);
@@ -50,7 +56,11 @@ export function initPlanter(rendererDomElement) {
 
     // Keep save data synced every frame while user drags gizmo
     _tc.addEventListener('objectChange', () => {
-        if (_selected) _syncToData(_selected);
+        if (_selected === _selectionGroup) {
+            _selectionGroup.children.forEach(m => _syncToData(m));
+        } else if (_selected) {
+            _syncToData(_selected);
+        }
         DC.updateSelectedInfo(_selected);
     });
 
@@ -63,6 +73,9 @@ export function initPlanter(rendererDomElement) {
             onTransformMode:  setTransformMode,
             onDelete:         deleteSelected,
             onSpawn:          spawnFromInventory,
+            onGetTags:        getDistinctTags,
+            onSelectTag:      selectByTag,
+            onUpdateTag:      updateSelectionTag
         },
         OBJECT_REGISTRY
     );
@@ -115,6 +128,44 @@ export function setTransformMode(mode) {
     if (_tc) _tc.setMode(mode);
 }
 
+// ─── TAGGING LOGIC ────────────────────────────────────────────────────────────
+
+export function getDistinctTags() {
+    const tags = new Set();
+    for (const entry of _meshToEntry.values()) {
+        if (entry.tag && entry.tag.trim() !== '') tags.add(entry.tag);
+    }
+    return Array.from(tags).sort();
+}
+
+export function selectByTag(tagName) {
+    if (!_active) return;
+    const meshes = [];
+    for (const [mesh, entry] of _meshToEntry.entries()) {
+        if (entry.tag === tagName) meshes.push(mesh);
+    }
+    if (meshes.length > 0) {
+        _selectGroup(meshes);
+    } else {
+        _deselect();
+    }
+}
+
+export function updateSelectionTag(newTag) {
+    if (!_selected) return;
+    
+    // Assign tag to all children if it's a group, or single element
+    if (_selected === _selectionGroup) {
+        _selectionGroup.children.forEach(m => {
+            const entry = _meshToEntry.get(m);
+            if (entry) entry.tag = newTag;
+        });
+    } else {
+        const entry = _meshToEntry.get(_selected);
+        if (entry) entry.tag = newTag;
+    }
+}
+
 // ─── SPAWN FROM INVENTORY ─────────────────────────────────────────────────────
 export async function spawnFromInventory(typeId) { 
     if (!_active) return; // safety guard
@@ -163,44 +214,119 @@ async function pasteObject() {
     const spawnZ = camera.position.z + forward.z * spawnDist;
 
     const terrainY = _getTerrainHeightAt(spawnX, spawnZ);
+    const spawnCenter = new THREE.Vector3(spawnX, terrainY + 2, spawnZ);
 
-    const mesh = await createObjectMesh(_clipboard.type);
-    if (!mesh) return;
+    if (_clipboard.type === 'single') {
+        const cData = _clipboard.item;
+        const mesh = await createObjectMesh(cData.type);
+        if (!mesh) return;
 
-    mesh.position.set(spawnX, terrainY + 2, spawnZ);
-    
-    // Apply copied rotations and scales
-    if (_clipboard.rx != null) mesh.rotation.set(_clipboard.rx, _clipboard.ry, _clipboard.rz);
-    if (_clipboard.sx != null) mesh.scale.set(_clipboard.sx, _clipboard.sy, _clipboard.sz);
+        mesh.position.copy(spawnCenter);
+        
+        // Apply copied rotations and scales
+        if (cData.rx != null) mesh.rotation.set(cData.rx, cData.ry, cData.rz);
+        if (cData.sx != null) mesh.scale.set(cData.sx, cData.sy, cData.sz);
 
-    scene.add(mesh);
+        scene.add(mesh);
 
-    const currentUUID = uuidHandler++;
-    const currentTag = _clipboard.tag || null;
+        const entry = {
+            uuid: uuidHandler++,
+            tag: cData.tag || null,
+            type: cData.type,
+            x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
+            rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
+            sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
+        };
+        data.push(entry);
+        _meshToEntry.set(mesh, entry);
 
-    const entry = {
-        uuid: currentUUID,
-        tag: currentTag,
-        type: _clipboard.type,
-        x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
-        rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
-        sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
-    };
-    data.push(entry);
-    _meshToEntry.set(mesh, entry);
+        _select(mesh);
 
-    _select(mesh);
+    } else if (_clipboard.type === 'group') {
+        // Find geometric center of copied grouping array
+        const box = new THREE.Box3();
+        _clipboard.items.forEach(item => {
+            box.expandByPoint(new THREE.Vector3(item.x, item.y, item.z));
+        });
+        const oldCenter = new THREE.Vector3();
+        box.getCenter(oldCenter);
+        
+        // Offset to move everything synchronously to the newly viewed spawn coordinate
+        const offset = new THREE.Vector3().subVectors(spawnCenter, oldCenter);
+        const pastedMeshes = [];
+
+        for (const cData of _clipboard.items) {
+            const mesh = await createObjectMesh(cData.type);
+            if (!mesh) continue;
+
+            mesh.position.set(cData.x, cData.y, cData.z).add(offset);
+            if (cData.rx != null) mesh.rotation.set(cData.rx, cData.ry, cData.rz);
+            if (cData.sx != null) mesh.scale.set(cData.sx, cData.sy, cData.sz);
+
+            scene.add(mesh);
+
+            const entry = {
+                uuid: uuidHandler++,
+                tag: cData.tag || null,
+                type: cData.type,
+                x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
+                rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
+                sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
+            };
+            data.push(entry);
+            _meshToEntry.set(mesh, entry);
+            pastedMeshes.push(mesh);
+        }
+
+        if (pastedMeshes.length > 0) {
+            _selectGroup(pastedMeshes);
+        }
+    }
 }
 
 // ─── SELECTION ────────────────────────────────────────────────────────────────
 function _select(mesh) {
+    _deselect();
     _selected = mesh;
     _tc.attach(mesh);
     _tc.setMode(_tfMode);
     DC.onObjectSelected(mesh, OBJECT_REGISTRY.get(mesh.userData.objectTypeId));
 }
 
+function _selectGroup(meshes) {
+    _deselect();
+
+    if (meshes.length === 1) {
+        _select(meshes[0]);
+        return;
+    }
+
+    // Align the gizmo group container directly at the center of target meshes
+    const box = new THREE.Box3();
+    meshes.forEach(m => box.expandByObject(m));
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+
+    _selectionGroup.position.copy(center);
+    _selectionGroup.rotation.set(0, 0, 0);
+    _selectionGroup.scale.set(1, 1, 1);
+
+    meshes.forEach(m => _selectionGroup.attach(m));
+    _selected = _selectionGroup;
+    _tc.attach(_selectionGroup);
+    _tc.setMode(_tfMode);
+    
+    DC.onGroupSelected(meshes.length);
+}
+
 function _deselect() {
+    if (_selected === _selectionGroup) {
+        // Return children to standard scene space smoothly, preserving exact world transform 
+        while (_selectionGroup.children.length > 0) {
+            scene.attach(_selectionGroup.children[0]);
+        }
+    }
+    
     _selected = null;
     if (_tc) _tc.detach();
     DC.onObjectDeselected();
@@ -209,29 +335,32 @@ function _deselect() {
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 export function deleteSelected() { 
     if (!_selected) return; 
-    const mesh = _selected; 
-    _deselect();
 
-    scene.remove(mesh);
+    const meshesToDelete = _selected === _selectionGroup 
+        ? [..._selectionGroup.children] 
+        : [_selected];
 
-    const entry = _meshToEntry.get(mesh);
-    if (entry) {
-        const idx = data.indexOf(entry);
-        if (idx !== -1) data.splice(idx, 1);
-        _meshToEntry.delete(mesh);
-    }
+    _deselect(); // safely detaches everything into scene before deletion
 
-    mesh.traverse((node) => {
-        if (node.isMesh) {
-            if (node.geometry) node.geometry.dispose();
-            if (node.material) {
-                if (Array.isArray(node.material)) {
-                    node.material.forEach(m => m.dispose());
-                } else {
-                    node.material.dispose();
+    meshesToDelete.forEach(mesh => {
+        scene.remove(mesh);
+        
+        const entry = _meshToEntry.get(mesh);
+        if (entry) {
+            const idx = data.indexOf(entry);
+            if (idx !== -1) data.splice(idx, 1);
+            _meshToEntry.delete(mesh);
+        }
+
+        mesh.traverse((node) => {
+            if (node.isMesh) {
+                if (node.geometry) node.geometry.dispose();
+                if (node.material) {
+                    if (Array.isArray(node.material)) node.material.forEach(m => m.dispose());
+                    else node.material.dispose();
                 }
             }
-        }
+        });
     });
 }
 
@@ -239,15 +368,26 @@ export function deleteSelected() {
 function _syncToData(mesh) {
     const entry = _meshToEntry.get(mesh);
     if (!entry) return;
-    entry.x = mesh.position.x;
-    entry.y = mesh.position.y;
-    entry.z = mesh.position.z;
-    entry.rx = mesh.rotation.x;
-    entry.ry = mesh.rotation.y;
-    entry.rz = mesh.rotation.z;
-    entry.sx = mesh.scale.x;
-    entry.sy = mesh.scale.y;
-    entry.sz = mesh.scale.z;
+
+    // Use getWorld extractions to be completely reliable when objects are inside groups
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    mesh.getWorldPosition(pos);
+    mesh.getWorldQuaternion(quat);
+    mesh.getWorldScale(scale);
+    
+    const euler = new THREE.Euler().setFromQuaternion(quat, 'XYZ');
+
+    entry.x = pos.x; 
+    entry.y = pos.y; 
+    entry.z = pos.z;
+    entry.rx = euler.x; 
+    entry.ry = euler.y; 
+    entry.rz = euler.z;
+    entry.sx = scale.x; 
+    entry.sy = scale.y; 
+    entry.sz = scale.z;
 }
 
 // ─── POINTER DOWN ─────────────────────────────────────────────────────────────
@@ -298,16 +438,31 @@ function _onKeyDown(e) {
     // Clipboard handlers
     if (e.ctrlKey || e.metaKey) {
         if (e.code === 'KeyC') {
-            if (_selected) {
-                const entry = _meshToEntry.get(_selected);
-                if (entry) _clipboard = JSON.parse(JSON.stringify(entry));
+            if (_selected === _selectionGroup) {
+                _clipboard = {
+                    type: 'group',
+                    items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m))))
+                };
+            } else if (_selected) {
+                _clipboard = {
+                    type: 'single',
+                    item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected)))
+                };
             }
             return;
         }
         if (e.code === 'KeyX') {
-            if (_selected) {
-                const entry = _meshToEntry.get(_selected);
-                if (entry) _clipboard = JSON.parse(JSON.stringify(entry));
+            if (_selected === _selectionGroup) {
+                _clipboard = {
+                    type: 'group',
+                    items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m))))
+                };
+                deleteSelected();
+            } else if (_selected) {
+                _clipboard = {
+                    type: 'single',
+                    item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected)))
+                };
                 deleteSelected();
             }
             return;
@@ -329,14 +484,22 @@ function _onKeyDown(e) {
         case 'BracketRight': // ] → scale up 10%
             if (_selected) {
                 _selected.scale.multiplyScalar(1.1);
-                _syncToData(_selected);
+                if (_selected === _selectionGroup) {
+                    _selectionGroup.children.forEach(m => _syncToData(m));
+                } else {
+                    _syncToData(_selected);
+                }
                 DC.updateSelectedInfo(_selected);
             }
             break;
         case 'BracketLeft': // [ → scale down 10%
             if (_selected) {
                 _selected.scale.multiplyScalar(0.909);
-                _syncToData(_selected);
+                if (_selected === _selectionGroup) {
+                    _selectionGroup.children.forEach(m => _syncToData(m));
+                } else {
+                    _syncToData(_selected);
+                }
                 DC.updateSelectedInfo(_selected);
             }
             break;

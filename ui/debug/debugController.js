@@ -82,6 +82,19 @@ function _injectStyles() {
             margin: 12px 0 5px 0; border-bottom: 1px solid #2a2f3a;
             padding-bottom: 3px; letter-spacing: 0.6px;
         }
+        
+        /* Tag Toggle & View */
+        .pp-view-toggle { display: flex; background: #12171c; border-radius: 8px; margin-bottom: 12px; padding: 2px; border: 1px solid #2a2f3a; }
+        .pp-vt-btn { flex: 1; padding: 6px 0; text-align: center; font-size: 11px; color: #778; cursor: pointer; border-radius: 6px; transition: 0.2s; font-weight: bold; }
+        .pp-vt-btn.active { background: #3b82f6; color: #fff; }
+        
+        #pp-tag-view { display: none; flex-direction: column; gap: 8px; }
+        #pp-tag-search { background: #1e2530; border: 1px solid #3a4050; color: #ccd; border-radius: 6px; padding: 6px 8px; font-size: 12px; outline: none; width: 100%; box-sizing: border-box; }
+        #pp-tag-search:focus { border-color: #3b82f6; }
+        #pp-tag-list { display: flex; flex-direction: column; gap: 4px; max-height: 400px; overflow-y: auto; }
+        .pp-tag-item { background: #1e2530; padding: 6px 8px; border-radius: 4px; font-size: 11px; color: #ccd; cursor: pointer; border: 1px solid transparent; transition: 0.1s; }
+        .pp-tag-item:hover { border-color: #3b82f6; background: #2a3040; }
+
         .pp-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
         .pp-btn {
             flex: 1; min-width: 60px; padding: 8px 6px;
@@ -225,34 +238,106 @@ function _createPlanterPanel() {
     panel.innerHTML = `
         <h3>🛠 Object Planter</h3>
 
-        <div class="pp-section-title">Mode</div>
-        <div class="pp-row">
-            <button id="pp-mode-toggle" class="pp-btn btn-mode-toggle">🚀 Fly Mode (Tab)</button>
+        <div class="pp-view-toggle">
+            <div id="vt-main" class="pp-vt-btn active">Planter</div>
+            <div id="vt-tags" class="pp-vt-btn">Tagged</div>
         </div>
 
-        <div class="pp-section-title">Transform</div>
-        <div class="pp-row">
-            <button id="pp-tf-translate" class="pp-btn active-tf" title="Move object [T]">↔ Move</button>
-            <button id="pp-tf-rotate"    class="pp-btn"           title="Rotate object [R]">↻ Rotate</button>
-            <button id="pp-tf-scale"     class="pp-btn"           title="Scale object [S]">⤡ Scale</button>
-        </div>
-        <div class="pp-row">
-            <button id="pp-delete" class="pp-btn btn-delete" title="Delete selected [Del]">🗑 Delete</button>
+        <div id="pp-main-view">
+            <div class="pp-section-title">Mode</div>
+            <div class="pp-row">
+                <button id="pp-mode-toggle" class="pp-btn btn-mode-toggle">🚀 Fly Mode (Tab)</button>
+            </div>
+
+            <div class="pp-section-title">Transform</div>
+            <div class="pp-row">
+                <button id="pp-tf-translate" class="pp-btn active-tf" title="Move object [T]">↔ Move</button>
+                <button id="pp-tf-rotate"    class="pp-btn"           title="Rotate object [R]">↻ Rotate</button>
+                <button id="pp-tf-scale"     class="pp-btn"           title="Scale object [S]">⤡ Scale</button>
+            </div>
+            <div class="pp-row">
+                <button id="pp-delete" class="pp-btn btn-delete" title="Delete selected [Del]">🗑 Delete</button>
+            </div>
+
+            <div class="pp-section-title">Object Tag</div>
+            <div class="pp-row" style="display: flex; gap: 6px; align-items: center;">
+                <input type="text" id="pp-tag-input" placeholder="Tag..." />
+                <button id="pp-tag-apply" class="pp-btn active-inv" title="Apply Tag to Selection" style="flex: 0 0 50px; min-width: 50px; padding: 6px 0;">Apply</button>
+                <button id="pp-tag-clear" class="pp-btn btn-delete" title="Clear" style="flex: 0 0 32px; min-width: 32px; padding: 6px 0;">✖</button>
+            </div>
+
+            <div id="pp-selected-info">No object selected</div>
+
+            <div class="pp-section-title">Inventory</div>
+            <div id="pp-inventory" class="pp-row"></div>
         </div>
 
-        <div class="pp-section-title">Object Tag</div>
-        <div class="pp-row" style="display: flex; gap: 6px; align-items: center;">
-            <input type="text" id="pp-tag-input" placeholder="Tag (optional)..." />
-            <button id="pp-tag-clear" class="pp-btn btn-delete" title="Clear Tag" style="flex: 0 0 32px; min-width: 32px; padding: 6px 0;">✖</button>
+        <div id="pp-tag-view">
+            <div class="pp-section-title">Search Tags</div>
+            <input type="text" id="pp-tag-search" placeholder="Type tag name..." />
+            <div class="pp-section-title" style="margin-top:12px;">Existing Tags</div>
+            <div id="pp-tag-list"></div>
         </div>
-
-        <div id="pp-selected-info">No object selected</div>
-
-        <div class="pp-section-title">Inventory</div>
-        <div id="pp-inventory" class="pp-row"></div>
     `;
     document.body.appendChild(panel);
     _el.planterPanel = panel;
+
+    // View Toggles
+    const vtMain = panel.querySelector('#vt-main');
+    const vtTags = panel.querySelector('#vt-tags');
+    const viewMain = panel.querySelector('#pp-main-view');
+    const viewTags = panel.querySelector('#pp-tag-view');
+    const searchInput = panel.querySelector('#pp-tag-search');
+    const tagList = panel.querySelector('#pp-tag-list');
+
+    function renderTagList(filter = '') {
+        tagList.innerHTML = '';
+        const tags = _planterCbs.onGetTags?.() || [];
+        const lowerFilter = filter.toLowerCase();
+        
+        const filtered = tags.filter(t => t.toLowerCase().includes(lowerFilter));
+        
+        if (filtered.length === 0) {
+            tagList.innerHTML = '<div style="color:#667; font-size:11px; padding:4px;">No tags found</div>';
+            return;
+        }
+
+        filtered.forEach(tag => {
+            const div = document.createElement('div');
+            div.className = 'pp-tag-item';
+            div.textContent = tag;
+            div.addEventListener('click', () => {
+                _planterCbs.onSelectTag?.(tag);
+                vtMain.click(); // Autoreturn to main view to transform
+                
+                // Prefill the tag input for easy assignment tracking
+                const tagInput = panel.querySelector('#pp-tag-input');
+                if (tagInput) tagInput.value = tag;
+            });
+            tagList.appendChild(div);
+        });
+    }
+
+    vtMain.addEventListener('click', () => {
+        vtMain.classList.add('active');
+        vtTags.classList.remove('active');
+        viewMain.style.display = 'block';
+        viewTags.style.display = 'none';
+    });
+
+    vtTags.addEventListener('click', () => {
+        vtTags.classList.add('active');
+        vtMain.classList.remove('active');
+        viewTags.style.display = 'flex';
+        viewMain.style.display = 'none';
+        searchInput.value = '';
+        renderTagList();
+        searchInput.focus();
+    });
+
+    searchInput.addEventListener('input', (e) => {
+        renderTagList(e.target.value);
+    });
 
     // Bind static buttons
     panel.querySelector('#pp-mode-toggle').addEventListener('click', (e) => {
@@ -273,11 +358,23 @@ function _createPlanterPanel() {
         _planterCbs.onDelete?.();
     });
     
-    // Bind Tag Clear Button
+    // Tag Assignment Handlers
+    panel.querySelector('#pp-tag-apply').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tagInput = panel.querySelector('#pp-tag-input');
+        if (tagInput) {
+            const val = tagInput.value.trim() !== '' ? tagInput.value.trim() : null;
+            _planterCbs.onUpdateTag?.(val);
+        }
+    });
+
     panel.querySelector('#pp-tag-clear').addEventListener('click', (e) => {
         e.stopPropagation();
         const tagInput = panel.querySelector('#pp-tag-input');
-        if (tagInput) tagInput.value = '';
+        if (tagInput) {
+            tagInput.value = '';
+            _planterCbs.onUpdateTag?.(null);
+        }
     });
 }
 
@@ -380,6 +477,15 @@ export function onObjectSelected(mesh, def) {
     `;
 }
 
+export function onGroupSelected(count) {
+    const el = document.getElementById('pp-selected-info');
+    if (!el) return;
+    el.innerHTML = `
+        <b style="color:#dde">Group Selected</b><br>
+        <span style="color:#667">${count} objects combined</span>
+    `;
+}
+
 export function onObjectDeselected() {
     const el = document.getElementById('pp-selected-info');
     if (el) el.textContent = 'No object selected';
@@ -389,11 +495,11 @@ export function onObjectDeselected() {
     }
 }
 
-export function updateSelectedInfo(mesh) {
-    if (!mesh) return;
+export function updateSelectedInfo(meshOrGroup) {
+    if (!meshOrGroup) return;
     const el = document.getElementById('pp-selected-info');
     if (!el) return;
-    const p = mesh.position;
+    const p = meshOrGroup.position;
     const existingName = el.querySelector('b');
     if (existingName) {
         el.querySelector('span').textContent =
