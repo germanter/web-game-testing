@@ -1,16 +1,13 @@
 ///// ui/debug/debugController.js /////
+import { SYSTEM, UI_BIOME } from '../../src/global.js';
+
 //
 // THE ONLY UI EXPORT GATE
 // ──────────────────────────────────────────────────────────────────────────────
 // ALL DOM elements are created and owned here.
 // No other file is allowed to touch document.body for UI directly.
 // Other modules (objPlanter, initMap) call functions here to set up their UI.
-//
-// DEBUG flag: when true, debug overlays (HUD, seed, biome, instructions)
-//             are injected into the DOM. Set false for production game mode.
 // ──────────────────────────────────────────────────────────────────────────────
-
-export const DEBUG = true;
 
 // ─── INTERNAL ELEMENT REFS ───────────────────────────────────────────────────
 const _el = {};
@@ -125,7 +122,7 @@ function _injectStyles() {
 export function initAllUI(worldSeed) {
     _injectStyles();
 
-    if (DEBUG) {
+    if (SYSTEM.DEBUG) {
         _createDebugHUD(worldSeed);
         _createCrosshair();
         _createInstructions();
@@ -400,11 +397,11 @@ export function updateDebugStats(statsEl, chunksSize, camera) {
 export function updateBiomeUI(biomeEl, macroValue) {
     if (!biomeEl) return;
     let biomeStr, bColor;
-    if      (macroValue < 0.25) { biomeStr = 'Flat Plains';                bColor = '#a3e635'; }
-    else if (macroValue < 0.45) { biomeStr = 'Plains/Hills Transition';    bColor = '#84cc16'; }
-    else if (macroValue < 0.60) { biomeStr = 'Rolling Hills';              bColor = '#eab308'; }
-    else if (macroValue < 0.80) { biomeStr = 'Hills/Mountains Transition'; bColor = '#f97316'; }
-    else                        { biomeStr = 'High Alpine Mountains';      bColor = '#ef4444'; }
+    if      (macroValue < UI_BIOME.plainsMax)      { biomeStr = UI_BIOME.plainsName;      bColor = UI_BIOME.plainsColor; }
+    else if (macroValue < UI_BIOME.plainsHillsMax) { biomeStr = UI_BIOME.plainsHillsName; bColor = UI_BIOME.plainsHillsColor; }
+    else if (macroValue < UI_BIOME.hillsMax)       { biomeStr = UI_BIOME.hillsName;       bColor = UI_BIOME.hillsColor; }
+    else if (macroValue < UI_BIOME.hillsMountMax)  { biomeStr = UI_BIOME.hillsMountName;  bColor = UI_BIOME.hillsMountColor; }
+    else                                           { biomeStr = UI_BIOME.mountainsName;   bColor = UI_BIOME.mountainsColor; }
     biomeEl.innerHTML =
         `Biome: <span style="color:${bColor};font-weight:bold;">${biomeStr} (${macroValue.toFixed(2)})</span>`;
 }

@@ -1,7 +1,6 @@
 ///// src/map/mainMap.js /////
 import { generateTreesForChunk, disposeTreesForChunk } from './tree.js';
-import { WORLD_SEED } from '../global.js';
-
+import { WORLD_SEED, MAP, SCENE, TERRAIN } from '../global.js';
 
 // DJB2 String Hashing function
 function hashString(str) {
@@ -140,19 +139,12 @@ export function getHeight(x, z) {
     return terrainHeight + micro - 5.0; 
 }
 
-// BIOMES & PROCEDURAL VERTEX COLORING
-
-
-// Old: 0xd2b48c (Bright Desert Beach)
-const colorSand     = new THREE.Color(0xa69580); 
-// Old: 0x284715 (Bright, lush forest green)
-const colorLowland = new THREE.Color(0x353d2d); 
-// Old: 0x5c6631 (Yellowish mossy green)
-const colorHill    = new THREE.Color(0x4a4736); 
-// Old: 0x3d4045 (Simple clean dark gray)
-const colorRock    = new THREE.Color(0x2b2d30); 
-// Old: 0xf0f4f8 (Clean, bright, soft snow)
-const colorSnow    = new THREE.Color(0xcbd1d6);
+// BIOMES & PROCEDURAL VERTEX COLORING (Sourced from global config)
+const colorSand    = new THREE.Color(TERRAIN.colorSand); 
+const colorLowland = new THREE.Color(TERRAIN.colorLowland); 
+const colorHill    = new THREE.Color(TERRAIN.colorHill); 
+const colorRock    = new THREE.Color(TERRAIN.colorRock); 
+const colorSnow    = new THREE.Color(TERRAIN.colorSnow);
 
 function getBiomeColor(y, normal, targetColor) {
     const slope = 1.0 - normal.y; 
@@ -183,32 +175,28 @@ function getBiomeColor(y, normal, targetColor) {
 
 // THREE.JS SETUP
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x5c6570); // Battleship Gray / Tactical Overcast // ### catch 22
-
-const renderDist = 4; 
-const chunkSize = 250; 
-const chunkRes = 70;   
-scene.fog = new THREE.Fog(0x5c6570, chunkSize * (renderDist - 1.5), chunkSize * renderDist); // ### catch 22
+scene.background = new THREE.Color(SCENE.background); 
+scene.fog = new THREE.Fog(SCENE.fogColor, MAP.chunkSize * (MAP.renderDist - SCENE.fogStartOffset), MAP.chunkSize * MAP.renderDist); 
 
 export const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.3);
-sunLight.position.set(2000, 3000, 1000);
+const sunLight = new THREE.DirectionalLight(SCENE.sunColor, SCENE.sunIntensity);
+sunLight.position.set(SCENE.sunPos.x, SCENE.sunPos.y, SCENE.sunPos.z);
 scene.add(sunLight);
 
-const ambientLight = new THREE.AmbientLight(0x405060, 0.6);
+const ambientLight = new THREE.AmbientLight(SCENE.ambientColor, SCENE.ambientIntensity);
 scene.add(ambientLight);
 
 const waterGeo = new THREE.PlaneGeometry(20000, 20000);
 waterGeo.rotateX(-Math.PI / 2);
 const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x1e5a8f, transparent: true, opacity: 0.85, roughness: 0.1, metalness: 0.8, depthWrite: false
+    color: TERRAIN.waterColor, transparent: true, opacity: TERRAIN.waterOpacity, roughness: 0.1, metalness: 0.8, depthWrite: false
 });
 const waterPlane = new THREE.Mesh(waterGeo, waterMat);
-waterPlane.position.y = 2.0; 
+waterPlane.position.y = TERRAIN.waterHeight; 
 scene.add(waterPlane);
 
 // CHUNK MANAGER
@@ -219,7 +207,7 @@ const sharedTerrainMaterial = new THREE.MeshStandardMaterial({
 });
 
 function buildChunk(cx, cz) {
-    const geometry = new THREE.PlaneGeometry(chunkSize, chunkSize, chunkRes, chunkRes);
+    const geometry = new THREE.PlaneGeometry(MAP.chunkSize, MAP.chunkSize, MAP.chunkRes, MAP.chunkRes);
     geometry.rotateX(-Math.PI / 2);
     
     const pos = geometry.attributes.position;
@@ -227,8 +215,8 @@ function buildChunk(cx, cz) {
     const colors = [];
     const tColor = new THREE.Color();
     
-    const offsetX = cx * chunkSize;
-    const offsetZ = cz * chunkSize;
+    const offsetX = cx * MAP.chunkSize;
+    const offsetZ = cz * MAP.chunkSize;
     const eps = 1.0; 
 
     for(let i = 0; i < pos.count; i++) {
@@ -264,12 +252,12 @@ function buildChunk(cx, cz) {
 }
 
 function updateChunks(cameraRef) {
-    const cx = Math.round(cameraRef.position.x / chunkSize);
-    const cz = Math.round(cameraRef.position.z / chunkSize);
+    const cx = Math.round(cameraRef.position.x / MAP.chunkSize);
+    const cz = Math.round(cameraRef.position.z / MAP.chunkSize);
     const activeKeys = new Set();
     
-    for(let x = -renderDist; x <= renderDist; x++) {
-        for(let z = -renderDist; z <= renderDist; z++) {
+    for(let x = -MAP.renderDist; x <= MAP.renderDist; x++) {
+        for(let z = -MAP.renderDist; z <= MAP.renderDist; z++) {
             const tx = cx + x, tz = cz + z;
             const key = `${tx},${tz}`;
             activeKeys.add(key);
@@ -298,8 +286,8 @@ function updateChunks(cameraRef) {
     // --- MODIFIED: Terrain AND Tree Generation ---
     if(chunkQueue.length > 0) {
         const q = chunkQueue.shift();
-        if(Math.abs(q.tx - Math.round(cameraRef.position.x/chunkSize)) <= renderDist && 
-           Math.abs(q.tz - Math.round(cameraRef.position.z/chunkSize)) <= renderDist) {
+        if(Math.abs(q.tx - Math.round(cameraRef.position.x/MAP.chunkSize)) <= MAP.renderDist && 
+           Math.abs(q.tz - Math.round(cameraRef.position.z/MAP.chunkSize)) <= MAP.renderDist) {
             
             // Build Terrain
             chunks.set(q.key, buildChunk(q.tx, q.tz));

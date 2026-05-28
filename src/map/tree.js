@@ -1,17 +1,5 @@
-import { WORLD_SEED } from '../global.js';
-
-// --- CONFIGURATION PARAMETERS ---
-export const CONFIG = {
-    TREE_DENSITY: 0.00003,       // Controls tree frequency across the map field
-    CHUNK_SIZE: 250,             // Must match mainMap.js
-    MIN_TREE_HEIGHT: 50.0,       // Tall, grand silhouette scale
-    MAX_TREE_HEIGHT: 100.0,
-    BIOME: {
-        MIN_ELEVATION: 10.0,     // Stays safely above beaches/water
-        MAX_ELEVATION: 62.0,     // Stops before rocky mountain peaks
-        MAX_SLOPE: 0.14          // Prevents trees from spawning on steep cliffs
-    }
-};
+///// src/map/tree.js /////
+import { WORLD_SEED, MAP, TREE } from '../global.js';
 
 const treeMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -138,9 +126,7 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     trunkGeo.translate(wx, wy + trunkHeight / 2, wz);
     
     // --- WEATHERED / WET BARK PALETTE ---
-
-    // Old: 0x231712 / 0x33241C (Warm, saturated chocolate brown)
-    const trunkColor = new THREE.Color(0x1a1614).lerp(new THREE.Color(0x262220), prng());
+    const trunkColor = new THREE.Color(TREE.colorTrunkDark).lerp(new THREE.Color(TREE.colorTrunkLight), prng());
     shadeOrganicGeometry(trunkGeo, prng, trunkColor, null, 'trunk');
     geos.push(trunkGeo);
 
@@ -151,11 +137,8 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     const layerHeight = (height * 0.88) / layers;
 
     // --- WEATHERED TACTICAL / SIBERIAN TAIGA TREE PALETTE ---
-
-    // Old: 0x0A190C (A bit too rich/emerald for this lighting)
-    const deepCoreColor = new THREE.Color(0x131a14);
-    // Old: 0x1E4620 / 0x2D5C22 (Way too bright, lush, and vibrant)
-    const vibrantOuterColor = new THREE.Color(0x2d362c).lerp(new THREE.Color(0x3a4239), prng());
+    const deepCoreColor = new THREE.Color(TREE.colorFoliageCore);
+    const vibrantOuterColor = new THREE.Color(TREE.colorFoliageOuterMin).lerp(new THREE.Color(TREE.colorFoliageOuterMax), prng());
 
     // Generate unique mathematical characteristics for this specific tree's foliage silhouette
     const branchClusters = 5 + Math.floor(prng() * 4); // 5 to 8 distinct radial growth directions
@@ -226,7 +209,7 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
 }
 
 function buildTreeGeometries(prng, wx, wy, wz) {
-    const height = CONFIG.MIN_TREE_HEIGHT + prng() * (CONFIG.MAX_TREE_HEIGHT - CONFIG.MIN_TREE_HEIGHT);
+    const height = TREE.minHeight + prng() * (TREE.maxHeight - TREE.minHeight);
     return buildGodTierConifer(prng, height, wx, wy, wz);
 }
 
@@ -245,25 +228,25 @@ export function generateTreesForChunk(cx, cz, scene, getHeightFunc) {
     if (chunkTrees.has(chunkKey)) return;
 
     const prng = createChunkPRNG(cx, cz);
-    const area = CONFIG.CHUNK_SIZE * CONFIG.CHUNK_SIZE;
-    const maxAttempts = Math.floor(area * CONFIG.TREE_DENSITY);
+    const area = MAP.chunkSize * MAP.chunkSize;
+    const maxAttempts = Math.floor(area * TREE.density);
     
     const chunkGeometries = [];
-    const offsetX = cx * CONFIG.CHUNK_SIZE;
-    const offsetZ = cz * CONFIG.CHUNK_SIZE;
+    const offsetX = cx * MAP.chunkSize;
+    const offsetZ = cz * MAP.chunkSize;
 
     for (let i = 0; i < maxAttempts; i++) {
-        const lx = (prng() - 0.5) * CONFIG.CHUNK_SIZE;
-        const lz = (prng() - 0.5) * CONFIG.CHUNK_SIZE;
+        const lx = (prng() - 0.5) * MAP.chunkSize;
+        const lz = (prng() - 0.5) * MAP.chunkSize;
         
         const wx = offsetX + lx;
         const wz = offsetZ + lz;
         const wy = getHeightFunc(wx, wz);
 
-        if (wy < CONFIG.BIOME.MIN_ELEVATION || wy > CONFIG.BIOME.MAX_ELEVATION) continue;
+        if (wy < TREE.minElevation || wy > TREE.maxElevation) continue;
 
         const normal = getNormalAt(wx, wz, getHeightFunc);
-        if ((1.0 - normal.y) > CONFIG.BIOME.MAX_SLOPE) continue;
+        if ((1.0 - normal.y) > TREE.maxSlope) continue;
 
         const treeGeos = buildTreeGeometries(prng, wx, wy, wz);
         chunkGeometries.push(...treeGeos);

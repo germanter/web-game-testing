@@ -1,11 +1,11 @@
 ///// src/initMap.js /////
 
-import { data }                       from '../config.js';
-import { WORLD_SEED }                  from './global.js';
+import { data }                                      from '../config.js';
+import { WORLD_SEED, SYSTEM }                        from './global.js';
 import { scene, renderer, chunks, updateMap, getMacroBiomeValue, getHeight } from './map/mainMap.js';
 import { camera, initCameraControls, updateCameraMovement, handleCameraResize } from './camera/debugCamera.js';
-import * as DC                         from '../ui/debug/debugController.js';
-import * as Planter                    from './objPlanter.js';
+import * as DC                                       from '../ui/debug/debugController.js';
+import * as Planter                                  from './objPlanter.js';
 
 // ── Boot sequence ──────────────────────────────────────────────────────────────
 
@@ -64,8 +64,8 @@ function animate() {
     // Chunk streaming + water
     updateMap(camera);
 
-    // Throttled debug UI updates (every 10 frames)
-    if (++frameCounter % 10 === 0 && DC.DEBUG) {
+    // Throttled debug UI updates (every 10 frames) checks global master debug state
+    if (++frameCounter % 10 === 0 && SYSTEM.DEBUG) {
         DC.updateDebugStats(DC.getStatsEl(), chunks.size, camera);
         DC.updateBiomeUI(DC.getBiomeEl(), getMacroBiomeValue(camera.position.x, camera.position.z));
     }

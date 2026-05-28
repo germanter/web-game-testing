@@ -1,29 +1,19 @@
 ///// src/camera/debugCamera.js /////
+import { CAMERA } from '../global.js';
 
-// --- ADJUSTABLE CAMERA PARAMETERS ---
-export const CAM_SETTINGS = {
-    fov: 65,
-    nearPlane: 0.1,
-    farPlane: 5000,
-    initialPos: { x: 0, y: 300, z: 0 },
-    baseSpeed: 250.0,
-    sprintMultiplier: 5.0,
-    mouseSensitivity: 0.002,
-    groundClearance: 5.0,
-    minPitch: -Math.PI / 2 + 0.01,
-    maxPitch:  Math.PI / 2 - 0.01,
-};
+// Keeping export alias mapping strictly for any potential backwards compatibility 
+export const CAM_SETTINGS = CAMERA; 
 
 export const camera = new THREE.PerspectiveCamera(
-    CAM_SETTINGS.fov,
+    CAMERA.fov,
     window.innerWidth / window.innerHeight,
-    CAM_SETTINGS.nearPlane,
-    CAM_SETTINGS.farPlane
+    CAMERA.nearPlane,
+    CAMERA.farPlane
 );
 camera.position.set(
-    CAM_SETTINGS.initialPos.x,
-    CAM_SETTINGS.initialPos.y,
-    CAM_SETTINGS.initialPos.z
+    CAMERA.initialPos.x,
+    CAMERA.initialPos.y,
+    CAMERA.initialPos.z
 );
 
 // ── Planter mode flag ──────────────────────────────────────────────────────────
@@ -51,9 +41,9 @@ export function initCameraControls() {
         if (document.pointerLockElement !== document.body) return;
         if (_planterModeActive) return;
 
-        yaw   -= e.movementX * CAM_SETTINGS.mouseSensitivity;
-        pitch -= e.movementY * CAM_SETTINGS.mouseSensitivity;
-        pitch  = Math.max(CAM_SETTINGS.minPitch, Math.min(CAM_SETTINGS.maxPitch, pitch));
+        yaw   -= e.movementX * CAMERA.mouseSensitivity;
+        pitch -= e.movementY * CAMERA.mouseSensitivity;
+        pitch  = Math.max(CAMERA.minPitch, Math.min(CAMERA.maxPitch, pitch));
         camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
     });
 
@@ -90,8 +80,8 @@ export function updateCameraMovement(delta, currentGroundHeight) {
     if (document.pointerLockElement !== document.body) return;
     if (_planterModeActive) return;
 
-    let speed = CAM_SETTINGS.baseSpeed * delta;
-    if (keys.shift) speed *= CAM_SETTINGS.sprintMultiplier;
+    let speed = CAMERA.baseSpeed * delta;
+    if (keys.shift) speed *= CAMERA.sprintMultiplier;
 
     const moveVector = new THREE.Vector3();
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -111,8 +101,8 @@ export function updateCameraMovement(delta, currentGroundHeight) {
     }
 
     // Terrain collision
-    if (camera.position.y < currentGroundHeight + CAM_SETTINGS.groundClearance) {
-        camera.position.y = currentGroundHeight + CAM_SETTINGS.groundClearance;
+    if (camera.position.y < currentGroundHeight + CAMERA.groundClearance) {
+        camera.position.y = currentGroundHeight + CAMERA.groundClearance;
     }
 }
 
