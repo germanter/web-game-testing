@@ -10,7 +10,7 @@ export const SYSTEM = {
 
 // ── CAMERA PARAMETERS ──────────────────────────────────────────────────
 export const CAMERA = {
-    fov: 85,                      // Field of View (degrees)
+    fov: 60,                      // Field of View (degrees)
     nearPlane: 0.1,               // Closest rendering distance
     farPlane: 5000,               // Furthest rendering distance
     initialPos: { x: 0, y: 300, z: 0 }, // Starting position [x, y, z]
@@ -55,8 +55,8 @@ export const TERRAIN = {
 // ── TREE GENERATOR PARAMETERS ──────────────────────────────────────────
 export const TREE = {
     density: 0.00003,             // REVERTED to your original density
-    minHeight: 40.0,              // REVERTED to your original scale
-    maxHeight: 45.0,             // REVERTED to your original scale
+    minHeight: 60.0,              // REVERTED to your original scale
+    maxHeight: 80.0,             // REVERTED to your original scale
     minElevation: 10.0,           // REVERTED to your original elevation
     maxElevation: 62.0,           // REVERTED to your original elevation
     maxSlope: 0.14,               // REVERTED to your original slope

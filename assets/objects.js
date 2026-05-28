@@ -80,6 +80,72 @@ export const OBJECT_REGISTRY = new Map([
         createGeometry: null,
         createMaterial: null,
         defaultScale: 100.0,
+    }],
+
+    ['f15', {
+        id: 'f15',
+        name: 'F-15',
+        category: 'Jet',
+        icon: '✈️',
+        glbPath: './assets/models/f15.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
+    }],
+
+    ['f18', {
+        id: 'f18',
+        name: 'F/A-18',
+        category: 'Jet',
+        icon: '✈️',
+        glbPath: './assets/models/f18.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
+    }],
+
+    ['f35', {
+        id: 'f35',
+        name: 'F-35',
+        category: 'Jet',
+        icon: '✈️',
+        glbPath: './assets/models/f35.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
+    }],
+
+    ['rq170drone', {
+        id: 'rq170drone',
+        name: 'RQ-170',
+        category: 'Drone',
+        icon: '✈️',
+        glbPath: './assets/models/rq170drone.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
+    }],
+
+    ['su27b', {
+        id: 'su27b',
+        name: 'Su-27B',
+        category: 'Jet',
+        icon: '✈️',
+        glbPath: './assets/models/su27b.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
+    }],
+
+    ['su27c', {
+        id: 'su27c',
+        name: 'Su-27C',
+        category: 'Jet',
+        icon: '✈️',
+        glbPath: './assets/models/su27c.glb',
+        createGeometry: null,
+        createMaterial: null,
+        defaultScale: 100.0,
     }]
 
 ]);

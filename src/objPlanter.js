@@ -25,6 +25,7 @@ let _tc           = null;    // THREE.TransformControls instance
 let _selected     = null;    // currently selected THREE.Mesh
 let _isDragging   = false;   // TransformControls gizmo drag in progress
 let _tfMode       = 'translate';
+let _clipboard    = null;    // memory for Ctrl+C / Ctrl+X
 
 // Track the next available UUID (ensures IDs are endless and unique)
 export let uuidHandler = 1;
@@ -152,6 +153,45 @@ export async function spawnFromInventory(typeId) {
     _select(mesh);
 }
 
+// ─── PASTE FROM CLIPBOARD (CTRL+V) ────────────────────────────────────────────
+async function pasteObject() {
+    if (!_active || !_clipboard) return;
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const spawnDist = 400; 
+    const spawnX = camera.position.x + forward.x * spawnDist;
+    const spawnZ = camera.position.z + forward.z * spawnDist;
+
+    const terrainY = _getTerrainHeightAt(spawnX, spawnZ);
+
+    const mesh = await createObjectMesh(_clipboard.type);
+    if (!mesh) return;
+
+    mesh.position.set(spawnX, terrainY + 2, spawnZ);
+    
+    // Apply copied rotations and scales
+    if (_clipboard.rx != null) mesh.rotation.set(_clipboard.rx, _clipboard.ry, _clipboard.rz);
+    if (_clipboard.sx != null) mesh.scale.set(_clipboard.sx, _clipboard.sy, _clipboard.sz);
+
+    scene.add(mesh);
+
+    const currentUUID = uuidHandler++;
+    const currentTag = _clipboard.tag || null;
+
+    const entry = {
+        uuid: currentUUID,
+        tag: currentTag,
+        type: _clipboard.type,
+        x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
+        rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
+        sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
+    };
+    data.push(entry);
+    _meshToEntry.set(mesh, entry);
+
+    _select(mesh);
+}
+
 // ─── SELECTION ────────────────────────────────────────────────────────────────
 function _select(mesh) {
     _selected = mesh;
@@ -254,6 +294,29 @@ function _onKeyDown(e) {
 
     // Notice we ignore keys if the user is typing in the Tag input field!
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+    // Clipboard handlers
+    if (e.ctrlKey || e.metaKey) {
+        if (e.code === 'KeyC') {
+            if (_selected) {
+                const entry = _meshToEntry.get(_selected);
+                if (entry) _clipboard = JSON.parse(JSON.stringify(entry));
+            }
+            return;
+        }
+        if (e.code === 'KeyX') {
+            if (_selected) {
+                const entry = _meshToEntry.get(_selected);
+                if (entry) _clipboard = JSON.parse(JSON.stringify(entry));
+                deleteSelected();
+            }
+            return;
+        }
+        if (e.code === 'KeyV') {
+            if (_clipboard) pasteObject();
+            return;
+        }
+    }
 
     switch (e.code) {
         case 'KeyT':      setTransformMode('translate'); break;
