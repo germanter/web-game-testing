@@ -5,10 +5,11 @@ const treeMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.9,
     metalness: 0.0,
-    flatShading: true            // Highlights the complex, organic, hand-carved low-poly facets
+    flatShading: true            
 });
 
-const chunkTrees = new Map();
+// EXPORTED: Allows physics engine to access raw mathematical bounds
+export const chunkTrees = new Map();
 const GLOBAL_SEED_NUM = hashString(WORLD_SEED);
 
 function hashString(str) {
@@ -27,7 +28,6 @@ function createChunkPRNG(cx, cz) {
     };
 }
 
-// --- GOD-TIER VERTEX COLORING (RADIAL CORE + DEPTH SHADOWS) ---
 function shadeOrganicGeometry(geometry, prng, innerColor, outerColor, type = 'foliage') {
     const pos = geometry.attributes.position;
     const count = pos.count;
@@ -46,26 +46,22 @@ function shadeOrganicGeometry(geometry, prng, innerColor, outerColor, type = 'fo
         const y = pos.getY(i);
         const z = pos.getZ(i);
 
-        const normalizedY = (y - minY) / heightRange; // 0.0 base to 1.0 peak
+        const normalizedY = (y - minY) / heightRange; 
         const radialDist = Math.sqrt(x * x + z * z);
 
         let finalColor = new THREE.Color();
 
         if (type === 'foliage') {
-            // Core Occlusion: Blend from a dark interior core to an expressive outer needle color
             const maxRadiusEstimate = heightRange * 0.4;
             const radialFactor = Math.min(1.0, radialDist / maxRadiusEstimate);
             finalColor.lerpColors(innerColor, outerColor, radialFactor);
 
-            // Hanging Shadow: Darken the undersides of the branch skirts dramatically
             const shadowFactor = 0.35 + (normalizedY * 0.65);
             finalColor.multiplyScalar(shadowFactor);
 
-            // Micro-variance per vertex to break up solid coloring blocks
             const noiseFactor = 0.92 + (prng() * 0.16);
             finalColor.multiplyScalar(noiseFactor);
         } else {
-            // Trunk shading (Dark gradient toward the root base)
             finalColor.copy(innerColor);
             const shadowFactor = 0.65 + (normalizedY * 0.35);
             finalColor.multiplyScalar(shadowFactor);
@@ -101,14 +97,12 @@ function mergeGeometries(geometries) {
     return merged;
 }
 
-// --- HYPER-PROCEDURAL ADVANCED FIR GENERATOR ---
 function buildGodTierConifer(prng, height, wx, wy, wz) {
     const geos = [];
     
-    // 1. ORGANIC TRUNK ASSEMBLY (Multi-segmented with natural growth warping)
     const trunkSegments = 5;
-    const trunkHeight = height * 0.45;
-    let trunkGeo = new THREE.CylinderGeometry(height * 0.015, height * 0.05, trunkHeight, 5, trunkSegments);
+    const trunkHeight = height * TREE.COLLIDER_HEIGHT_SCALE;
+    let trunkGeo = new THREE.CylinderGeometry(height * 0.015, height * TREE.COLLIDER_RADIUS_SCALE, trunkHeight, 5, trunkSegments);
     trunkGeo = trunkGeo.toNonIndexed();
     
     const trunkPos = trunkGeo.attributes.position;
@@ -117,7 +111,6 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     
     for (let i = 0; i < trunkPos.count; i++) {
         let ty = trunkPos.getY(i);
-        // Warp trunk vertices based on height to give a natural, non-linear organic curve
         let factor = (ty / trunkHeight) + 0.5; 
         trunkPos.setX(i, trunkPos.getX(i) + wobbleX * Math.sin(factor * Math.PI));
         trunkPos.setZ(i, trunkPos.getZ(i) + wobbleZ * Math.cos(factor * Math.PI));
@@ -125,28 +118,23 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     trunkGeo.computeVertexNormals();
     trunkGeo.translate(wx, wy + trunkHeight / 2, wz);
     
-    // --- WEATHERED / WET BARK PALETTE ---
     const trunkColor = new THREE.Color(TREE.colorTrunkDark).lerp(new THREE.Color(TREE.colorTrunkLight), prng());
     shadeOrganicGeometry(trunkGeo, prng, trunkColor, null, 'trunk');
     geos.push(trunkGeo);
 
-    // 2. PROCEDURAL NEEDLE SKIRTS (Dynamic structural deformation)
-    const layers = 5 + Math.floor(prng() * 3); // 5 to 7 deeply unique dense layers
+    const layers = 5 + Math.floor(prng() * 3); 
     let currentY = wy + height * 0.22;
-    let layerRadius = height * 0.32;
+    let layerRadius = height * TREE.COLLIDER_CONE_RADIUS_SCALE;
     const layerHeight = (height * 0.88) / layers;
 
-    // --- WEATHERED TACTICAL / SIBERIAN TAIGA TREE PALETTE ---
     const deepCoreColor = new THREE.Color(TREE.colorFoliageCore);
     const vibrantOuterColor = new THREE.Color(TREE.colorFoliageOuterMin).lerp(new THREE.Color(TREE.colorFoliageOuterMax), prng());
 
-    // Generate unique mathematical characteristics for this specific tree's foliage silhouette
-    const branchClusters = 5 + Math.floor(prng() * 4); // 5 to 8 distinct radial growth directions
+    const branchClusters = 5 + Math.floor(prng() * 4); 
     const structuralAsymmetry = prng() * 0.25;
     const phaseOffset = prng() * Math.PI * 2;
 
     for (let i = 0; i < layers; i++) {
-        // High vertex distribution (14 radial segments, 4 height cuts) provides high fidelity for mutations
         let layerGeo = new THREE.ConeGeometry(layerRadius, layerHeight, 14, 4);
         layerGeo = layerGeo.toNonIndexed();
 
@@ -164,24 +152,16 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
             let r = Math.sqrt(x * x + z * z);
             if (r > 0.01) {
                 let angle = Math.atan2(z, x);
-
-                // WAVE FUNCTION A: Primary radial branch cluster nodes (Rhythmic extensions)
                 let clusters = Math.sin(angle * branchClusters + phaseOffset) * 0.22;
-
-                // WAVE FUNCTION B: High-frequency ragged micro-needle roughness
                 let needles = Math.cos(angle * 23.0 + (y * 4.0)) * 0.08;
-
-                // WAVE FUNCTION C: Silhouette asymmetry variant (Prevents uniform roundness)
                 let variant = Math.sin(angle * 2.0 - phaseOffset) * structuralAsymmetry;
 
                 let totalDisplacement = 1.0 + clusters + needles + variant;
                 x *= totalDisplacement;
                 z *= totalDisplacement;
 
-                // ORGANIC BRANCH DROOP: Forces outer needle ends to sag heavily downward under their own weight
-                let normY = (y - minY) / layerHeight; // 0.0 (bottom edge of layer) to 1.0 (top)
+                let normY = (y - minY) / layerHeight; 
                 if (normY < 0.75) {
-                    // Lower outer boundaries sag downward based on their extension distance
                     y -= (r * 0.32) * (1.0 - normY);
                 }
             }
@@ -192,15 +172,12 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
         }
 
         layerGeo.computeVertexNormals();
-        
-        // Randomly twist each layer around Y-axis to offset matching facets
         layerGeo.rotateY(prng() * Math.PI * 2);
         layerGeo.translate(wx, currentY + layerHeight / 2, wz);
 
         shadeOrganicGeometry(layerGeo, prng, deepCoreColor, vibrantOuterColor, 'foliage');
         geos.push(layerGeo);
 
-        // Step upward and tightly taper inward for the next structural tier
         currentY += layerHeight * 0.62;
         layerRadius *= 0.72; 
     }
@@ -208,12 +185,6 @@ function buildGodTierConifer(prng, height, wx, wy, wz) {
     return geos;
 }
 
-function buildTreeGeometries(prng, wx, wy, wz) {
-    const height = TREE.minHeight + prng() * (TREE.maxHeight - TREE.minHeight);
-    return buildGodTierConifer(prng, height, wx, wy, wz);
-}
-
-// --- LIFECYCLE MANAGEMENT ---
 function getNormalAt(x, z, getHeightFunc) {
     const eps = 0.5;
     const nx = getHeightFunc(x - eps, z) - getHeightFunc(x + eps, z);
@@ -232,6 +203,7 @@ export function generateTreesForChunk(cx, cz, scene, getHeightFunc) {
     const maxAttempts = Math.floor(area * TREE.density);
     
     const chunkGeometries = [];
+    const treeData = [];
     const offsetX = cx * MAP.chunkSize;
     const offsetZ = cz * MAP.chunkSize;
 
@@ -248,8 +220,13 @@ export function generateTreesForChunk(cx, cz, scene, getHeightFunc) {
         const normal = getNormalAt(wx, wz, getHeightFunc);
         if ((1.0 - normal.y) > TREE.maxSlope) continue;
 
-        const treeGeos = buildTreeGeometries(prng, wx, wy, wz);
+        // Ensure PRNG sequence behaves identically 
+        const height = TREE.minHeight + prng() * (TREE.maxHeight - TREE.minHeight);
+        const treeGeos = buildGodTierConifer(prng, height, wx, wy, wz);
         chunkGeometries.push(...treeGeos);
+        
+        // Save the raw mathematical footprint of the tree object for custom collision engine
+        treeData.push({ x: wx, y: wy, z: wz, height });
     }
 
     if (chunkGeometries.length > 0) {
@@ -260,19 +237,21 @@ export function generateTreesForChunk(cx, cz, scene, getHeightFunc) {
         chunkTreeMesh.updateMatrix();
         
         scene.add(chunkTreeMesh);
-        chunkTrees.set(chunkKey, chunkTreeMesh);
+
+        // Store both visual array and math data bounding array
+        chunkTrees.set(chunkKey, { mesh: chunkTreeMesh, data: treeData });
     } else {
-        chunkTrees.set(chunkKey, null); 
+        chunkTrees.set(chunkKey, { mesh: null, data: [] }); 
     }
 }
 
 export function disposeTreesForChunk(cx, cz, scene) {
     const chunkKey = `${cx},${cz}`;
     if (chunkTrees.has(chunkKey)) {
-        const mesh = chunkTrees.get(chunkKey);
-        if (mesh) {
-            scene.remove(mesh);
-            mesh.geometry.dispose();
+        const chunkData = chunkTrees.get(chunkKey);
+        if (chunkData && chunkData.mesh) {
+            scene.remove(chunkData.mesh);
+            chunkData.mesh.geometry.dispose();
         }
         chunkTrees.delete(chunkKey);
     }

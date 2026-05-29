@@ -1,5 +1,6 @@
 ///// src/camera/debugCamera.js /////
-import { CAMERA } from '../global.js';
+import { CAMERA, PHYSICS } from '../global.js';
+import { resolveMovement } from '../collision/collision.js';
 
 // Keeping export alias mapping strictly for any potential backwards compatibility 
 export const CAM_SETTINGS = CAMERA; 
@@ -97,10 +98,20 @@ export function updateCameraMovement(delta, currentGroundHeight) {
 
     if (moveVector.lengthSq() > 0) {
         moveVector.normalize();
-        camera.position.addScaledVector(moveVector, speed);
+        let proposedMove = moveVector.multiplyScalar(speed);
+        
+        // Pass the velocity block intent purely mathematically via decoupled collision module 
+        if (PHYSICS.ACTIVE_COLLIDER_TARGET === 'DEBUG_CAMERA') {
+            const resolvedMove = resolveMovement(camera.position, proposedMove, PHYSICS.entityRadius);
+            camera.position.x += resolvedMove.x;
+            camera.position.y += resolvedMove.y;
+            camera.position.z += resolvedMove.z;
+        } else {
+            camera.position.add(proposedMove);
+        }
     }
 
-    // Terrain collision
+    // Terrain collision (Absolute hard floor block)
     if (camera.position.y < currentGroundHeight + CAMERA.groundClearance) {
         camera.position.y = currentGroundHeight + CAMERA.groundClearance;
     }

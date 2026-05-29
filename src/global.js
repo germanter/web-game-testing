@@ -8,65 +8,76 @@ export const SYSTEM = {
     DEBUG: true, 
 };
 
+// ── PHYSICS & COLLISION ────────────────────────────────────────────────
+export const PHYSICS = {
+    ACTIVE_COLLIDER_TARGET: 'DEBUG_CAMERA', // Switch which entity obeys the decoupled math physics
+    entityRadius: 1.5,                      // Base physical radius of the object traversing the world
+};
+
 // ── CAMERA PARAMETERS ──────────────────────────────────────────────────
 export const CAMERA = {
-    fov: 60,                      // Field of View (degrees)
-    nearPlane: 0.1,               // Closest rendering distance
-    farPlane: 5000,               // Furthest rendering distance
-    initialPos: { x: 0, y: 300, z: 0 }, // Starting position [x, y, z]
-    baseSpeed: 250.0,             // Normal flying speed (units per second)
-    sprintMultiplier: 5.0,        // Speed multiplier when holding Shift
-    mouseSensitivity: 0.002,      // Mouse look sensitivity
-    groundClearance: 5.0,         // Minimum height camera stays above ground
-    minPitch: -Math.PI / 2 + 0.01,// Look down limit (radians)
-    maxPitch:  Math.PI / 2 - 0.01,// Look up limit (radians)
+    fov: 60,                      
+    nearPlane: 0.1,               
+    farPlane: 5000,               
+    initialPos: { x: 0, y: 300, z: 0 }, 
+    baseSpeed: 250.0,             
+    sprintMultiplier: 5.0,        
+    mouseSensitivity: 0.002,      
+    groundClearance: 5.0,         
+    minPitch: -Math.PI / 2 + 0.01,
+    maxPitch:  Math.PI / 2 - 0.01,
 };
 
 // ── MAP GENERATION ─────────────────────────────────────────────────────
 export const MAP = {
-    renderDist: 4,                // Number of chunks rendered in each direction from camera
-    chunkSize: 250,               // Physical size of one chunk (synced with tree generation)
-    chunkRes: 70,                 // Vertex resolution per chunk
+    renderDist: 4,                
+    chunkSize: 250,               
+    chunkRes: 70,                 
 };
 
 export const SCENE = {
-    background: 0x9fa4a6,         // Muted, cold overcast gray sky
-    fogColor: 0x9fa4a6,           // Fog matches the heavy, low-hanging overcast mist
-    fogStartOffset: 1.5,          // REVERTED to your original layout offset
-    sunColor: 0xeeeeee,           // Diffused, flat white light (no warm yellow sun)
-    sunIntensity: 2.0,            // Lowered to mimic flat overcast day
-    sunPos: { x: 2000, y: 3000, z: 1000 }, // REVERTED to your original sun position
-    ambientColor: 0x5a5d64,       // Cold, slate-gray ambient bounce light
-    ambientIntensity: 0.7,        // High ambient ratio to eliminate harsh shadows
+    background: 0x9fa4a6,         
+    fogColor: 0x9fa4a6,           
+    fogStartOffset: 1.5,          
+    sunColor: 0xeeeeee,           
+    sunIntensity: 2.0,            
+    sunPos: { x: 2000, y: 3000, z: 1000 }, 
+    ambientColor: 0x5a5d64,       
+    ambientIntensity: 0.7,        
 };
 
 // ── TERRAIN BIOME & WATER COLORS ───────────────────────────────────────
 export const TERRAIN = {
-    colorSand: 0x3d352e,          // Wet, muddy banks / puddle edges
-    colorLowland: 0x2b241f,       // Deep, dark forest mud and decayed leaves
-    colorHill: 0x423b32,          // Muted leaf-littered soil and damp earth
-    colorRock: 0x3a3d40,          // Wet, cold stone gray
-    colorSnow: 0xd2d7df,          // Dirty, slushy winter snow patches
-    waterColor: 0x484b4f,         // Steel-gray, muddy puddle/river color
-    waterOpacity: 0.85,           // REVERTED to your original opacity
-    waterHeight: 2.0,             // REVERTED to your original height
+    colorSand: 0x3d352e,          
+    colorLowland: 0x2b241f,       
+    colorHill: 0x423b32,          
+    colorRock: 0x3a3d40,          
+    colorSnow: 0xd2d7df,          
+    waterColor: 0x484b4f,         
+    waterOpacity: 0.85,           
+    waterHeight: 2.0,             
 };
 
 // ── TREE GENERATOR PARAMETERS ──────────────────────────────────────────
 export const TREE = {
-    density: 0.00003,             // REVERTED to your original density
-    minHeight: 60.0,              // REVERTED to your original scale
-    maxHeight: 80.0,             // REVERTED to your original scale
-    minElevation: 10.0,           // REVERTED to your original elevation
-    maxElevation: 62.0,           // REVERTED to your original elevation
-    maxSlope: 0.14,               // REVERTED to your original slope
+    density: 0.00003,             
+    minHeight: 60.0,              
+    maxHeight: 80.0,             
+    minElevation: 10.0,           
+    maxElevation: 62.0,           
+    maxSlope: 0.14,               
     
     // Tree visual palette (Muted, bare, winter forest tones)
-    colorTrunkDark: 0x1c1a18,     // Wet, near-black tree bark base
-    colorTrunkLight: 0x383430,    // Weathered, ash-brown bark highlights
-    colorFoliageCore: 0x222621,   // Dead, dark olive/decayed pine core
-    colorFoliageOuterMin: 0x2d302a, // Dead/dormant winter needles minimum
-    colorFoliageOuterMax: 0x3b3f37, // Highly desaturated, cold military green max
+    colorTrunkDark: 0x1c1a18,     
+    colorTrunkLight: 0x383430,    
+    colorFoliageCore: 0x222621,   
+    colorFoliageOuterMin: 0x2d302a, 
+    colorFoliageOuterMax: 0x3b3f37, 
+
+    // Mathematical Physics Collider Setup
+    COLLIDER_RADIUS_SCALE: 0.05,      // Scale for trunk cylinder base radius
+    COLLIDER_HEIGHT_SCALE: 0.45,      // Percentage of total tree height that acts as solid trunk
+    COLLIDER_CONE_RADIUS_SCALE: 0.32, // Maximum radius of the base of the foliage cone section
 };
 
 // ── DEBUG UI BIOME THRESHOLDS & COLORS ─────────────────────────────────
@@ -78,54 +89,42 @@ export const UI_BIOME = {
     mountainsColor: '#ef4444', mountainsName: 'High Alpine Mountains',
 };
 
-
 // ── PROCEDURAL TERRAIN GENERATION PARAMETERS ───────────────────────────
-
-// These mathematically shape the noise maps, heights, and chances of biomes spawning.
-
 export const TERRAIN_GEN = {
-    // 1. MACRO NOISE (Determines the global layout / chance of biomes)
-    macroScale: 0.00025,       // Zoom level of the biome map
-    macroOctaves: 3,           // Detail passes for biome shapes
-    macroPersistence: 0.5,     // How much each detail pass contributes
-    macroLacunarity: 2.0,      // Frequency multiplier per detail pass
+    macroScale: 0.00025,       
+    macroOctaves: 3,           
+    macroPersistence: 0.5,     
+    macroLacunarity: 2.0,      
 
-    // 2. PLAINS TERRAIN (Flat, low-lying areas)
     plainsScale: 0.001,
     plainsOctaves: 2,
     plainsPersistence: 0.5,
     plainsLacunarity: 2.0,
-    plainsHeightMult: 12.0,    // Max height of plains
-    plainsOffset: 0.5,         // Base elevation boost
+    plainsHeightMult: 12.0,    
+    plainsOffset: 0.5,         
 
-    // 3. HILLS TERRAIN (Rolling, bumpy mid-elevations)
     hillsScale: 0.002,
     hillsOctaves: 4,
     hillsPersistence: 0.5,
     hillsLacunarity: 2.0,
-    hillsHeightMult: 90.0,     // Max height of hills
-    hillsExponent: 1.8,        // Pushes the valleys down and peaks up (shaping)
+    hillsHeightMult: 90.0,     
+    hillsExponent: 1.8,        
 
-    // 4. MOUNTAINS TERRAIN (Sharp, ridged peaks)
     mountainsScale: 0.0025,
-    mountainsOctaves: 6,       // High octaves for jagged rocky detail
-    mountainsHeightMult: 450.0,// Extreme height multiplier for peaks
-    mountainsOffset: 20.0,     // Pushes mountains down slightly to blend better
+    mountainsOctaves: 6,       
+    mountainsHeightMult: 450.0,
+    mountainsOffset: 20.0,     
 
-    // 5. MICRO NOISE (Tiny rocks, bumps, and variance across ALL terrain)
     microScale: 0.05,
     microOctaves: 2,
     microPersistence: 0.5,
     microLacunarity: 2.0,
-    microHeightMult: 1.5,      // How tall the small bumps are
+    microHeightMult: 1.5,      
 
-    // 6. BIOME BLENDING THRESHOLDS (Based on Macro noise 0.0 to 1.0)
-    // Changing these alters the "chance" or "amount" of each biome
-    plainsToHillsStart: 0.25,  // Below 0.25 is purely Plains
-    plainsToHillsEnd: 0.45,    // At 0.45, it is purely Hills
-    hillsToMountStart: 0.60,   // Below 0.60 is mostly Hills
-    hillsToMountEnd: 0.80,     // Above 0.80 is purely Mountains
+    plainsToHillsStart: 0.25,  
+    plainsToHillsEnd: 0.45,    
+    hillsToMountStart: 0.60,   
+    hillsToMountEnd: 0.80,     
 
-    // 7. GLOBAL OFFSET
-    globalHeightOffset: 5.0    // Sinks the entire world down by this amount
+    globalHeightOffset: 5.0    
 };
