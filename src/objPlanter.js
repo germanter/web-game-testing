@@ -19,6 +19,12 @@ import { camera, setPlanterModeFlag }  from './camera/debugCamera.js';
 import * as DC                         from '../ui/debug/debugController.js';
 import { OBJECT_REGISTRY, createObjectMesh } from '../assets/objects.js';
 import { data }                        from '../config.js';
+import { openColModModal }             from '../ui/debug/colmodModal.js';
+import {
+    cloneColliderArray,
+    ensureEntryColliders,
+    rebuildColliderNodes,
+} from './collision/collisionColliderForPlanted.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let _active       = false;   // true = planter mode, false = fly mode
@@ -27,6 +33,8 @@ let _selected     = null;    // currently selected THREE.Mesh OR THREE.Group
 let _isDragging   = false;   // TransformControls gizmo drag in progress
 let _tfMode       = 'translate';
 let _clipboard    = null;    // memory for Ctrl+C / Ctrl+X ({ type: 'single'|'group', items: [] })
+let _saveMapToDisk = null;
+let _colmodOpen = false;
 
 // Track the next available UUID (ensures IDs are endless and unique)
 export let uuidHandler = 1;
@@ -42,7 +50,8 @@ const _raycaster = new THREE.Raycaster();
 const _mouse     = new THREE.Vector2();
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-export function initPlanter(rendererDomElement) {
+export function initPlanter(rendererDomElement, saveMapToDisk) {
+    _saveMapToDisk = saveMapToDisk;
     scene.add(_selectionGroup); // Core group for multi-select transforms
 
     // ── TransformControls setup (mirrors 3dArena.html pattern) ────────────────
@@ -75,7 +84,8 @@ export function initPlanter(rendererDomElement) {
             onSpawn:          spawnFromInventory,
             onGetTags:        getDistinctTags,
             onSelectTag:      selectByTag,
-            onUpdateTag:      updateSelectionTag
+            onUpdateTag:      updateSelectionTag,
+            onOpenColMod:     openColModForSelection
         },
         OBJECT_REGISTRY
     );
@@ -102,12 +112,14 @@ export function loadSavedObjects() {
         
         scene.add(mesh); 
         _meshToEntry.set(mesh, entry); 
+        _prepareColliderDataAndNodes(mesh, entry);
     }); 
 }
 
 // ─── MODE TOGGLE ──────────────────────────────────────────────────────────────
 export function togglePlanterMode() {
     _active = !_active;
+    _clipboard = null;
 
     if (_active) {
         if (document.pointerLockElement) document.exitPointerLock();
@@ -200,11 +212,42 @@ export async function spawnFromInventory(typeId) {
     };
     data.push(entry);
     _meshToEntry.set(mesh, entry);
+    _prepareColliderDataAndNodes(mesh, entry);
 
     _select(mesh);
 }
 
 // ─── PASTE FROM CLIPBOARD (CTRL+V) ────────────────────────────────────────────
+export async function openColModForSelection() {
+    if (!_active || !_selected || _selected === _selectionGroup || _colmodOpen) return;
+
+    const entry = _meshToEntry.get(_selected);
+    if (!entry) return;
+
+    _clipboard = null;
+    _colmodOpen = true;
+    if (_tc) _tc.detach();
+
+    openColModModal({
+        sourceMesh: _selected,
+        entry,
+        objectDef: OBJECT_REGISTRY.get(entry.type || _selected.userData.objectTypeId),
+        onSave: async (colliders) => {
+            entry.colliders = cloneColliderArray(colliders);
+            rebuildColliderNodes(_selected, entry.colliders);
+            await _saveMapToDisk?.();
+        },
+        onClose: () => {
+            _colmodOpen = false;
+            _clipboard = null;
+            if (_selected && _tc) {
+                _tc.attach(_selected);
+                _tc.setMode(_tfMode);
+            }
+        }
+    });
+}
+
 async function pasteObject() {
     if (!_active || !_clipboard) return;
 
@@ -236,9 +279,11 @@ async function pasteObject() {
             x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
             rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
             sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
+            colliders: cloneColliderArray(cData.colliders),
         };
         data.push(entry);
         _meshToEntry.set(mesh, entry);
+        _prepareColliderDataAndNodes(mesh, entry);
 
         _select(mesh);
 
@@ -272,9 +317,11 @@ async function pasteObject() {
                 x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
                 rx: mesh.rotation.x, ry: mesh.rotation.y, rz: mesh.rotation.z,
                 sx: mesh.scale.x, sy: mesh.scale.y, sz: mesh.scale.z,
+                colliders: cloneColliderArray(cData.colliders),
             };
             data.push(entry);
             _meshToEntry.set(mesh, entry);
+            _prepareColliderDataAndNodes(mesh, entry);
             pastedMeshes.push(mesh);
         }
 
@@ -393,6 +440,7 @@ function _syncToData(mesh) {
 // ─── POINTER DOWN ─────────────────────────────────────────────────────────────
 function _onPointerDown(e) { 
     if (!_active) return;
+    if (_colmodOpen) return;
     if (_isDragging) return; 
     if (e.target.closest('#planter-panel') || e.target.closest('button')) return;
 
@@ -424,6 +472,8 @@ function _onPointerDown(e) {
 
 // ─── KEY DOWN — shortcuts ─────────────────────────────────────────────────────
 function _onKeyDown(e) {
+    if (_colmodOpen) return;
+
     if (e.code === 'Tab') {
         e.preventDefault();
         togglePlanterMode();
@@ -514,4 +564,10 @@ function _getTerrainHeightAt(x, z) {
     const terrainMeshes = Array.from(chunks.values());
     const hits = _raycaster.intersectObjects(terrainMeshes, false);
     return hits.length > 0 ? hits[0].point.y : 0;
+}
+
+function _prepareColliderDataAndNodes(mesh, entry) {
+    const def = OBJECT_REGISTRY.get(entry.type || mesh.userData.objectTypeId);
+    ensureEntryColliders(entry, mesh, def);
+    rebuildColliderNodes(mesh, entry.colliders);
 }

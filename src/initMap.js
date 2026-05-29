@@ -19,7 +19,7 @@ DC.setupPointerLockUI(() => !Planter.isPlanterActive());
 initCameraControls();
 
 // 4. Init object planter (TransformControls + inventory UI)
-Planter.initPlanter(renderer.domElement);
+Planter.initPlanter(renderer.domElement, saveMapToDisk);
 
 // 5. Load any previously saved objects
 Planter.loadSavedObjects();
@@ -35,7 +35,7 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyP') saveMapToDisk();
 });
 
-async function saveMapToDisk() {
+export async function saveMapToDisk() {
     console.log('Saving map…', data);
     try {
         await fetch('/', {

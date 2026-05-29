@@ -109,6 +109,12 @@ function _injectStyles() {
         .pp-btn.active-inv { background: #3b82f6; color: #fff; border-color: #3b82f6; }
         .pp-btn.btn-delete { border-left: 3px solid #ef4444; }
         .pp-btn.btn-delete:hover { background: #2d1a1a; }
+        .pp-btn.btn-colmod { border-left: 3px solid #22d3ee; }
+        .pp-btn.btn-colmod:disabled {
+            opacity: 0.35; cursor: not-allowed; transform: none;
+            border-color: #334155; color: #667;
+        }
+        .pp-btn.btn-colmod:disabled:hover { background: #1e2530; border-color: #334155; }
         .pp-btn.btn-mode-toggle { border-left: 3px solid #4ade80; width: 100%; }
         .pp-btn.btn-mode-toggle.planter-active {
             background: #4ade80; color: #111; border-color: #4ade80;
@@ -257,6 +263,7 @@ function _createPlanterPanel() {
             </div>
             <div class="pp-row">
                 <button id="pp-delete" class="pp-btn btn-delete" title="Delete selected [Del]">🗑 Delete</button>
+                <button id="pp-colmod" class="pp-btn btn-colmod" title="Edit selected object colliders" disabled style="display:none;">COLMOD</button>
             </div>
 
             <div class="pp-section-title">Object Tag</div>
@@ -356,6 +363,10 @@ function _createPlanterPanel() {
     panel.querySelector('#pp-delete').addEventListener('click', (e) => {
         e.stopPropagation();
         _planterCbs.onDelete?.();
+    });
+    panel.querySelector('#pp-colmod').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!e.currentTarget.disabled) _planterCbs.onOpenColMod?.();
     });
     
     // Tag Assignment Handlers
@@ -466,6 +477,7 @@ export function onPlanterModeChanged(isActive) {
 
 export function onObjectSelected(mesh, def) {
     const el = document.getElementById('pp-selected-info');
+    _setColModEnabled(true);
     if (!el) return;
     const name = def ? `${def.icon} ${def.name}` : mesh.userData.objectTypeId || 'Unknown';
     const p = mesh.position;
@@ -479,6 +491,7 @@ export function onObjectSelected(mesh, def) {
 
 export function onGroupSelected(count) {
     const el = document.getElementById('pp-selected-info');
+    _setColModEnabled(false);
     if (!el) return;
     el.innerHTML = `
         <b style="color:#dde">Group Selected</b><br>
@@ -488,11 +501,19 @@ export function onGroupSelected(count) {
 
 export function onObjectDeselected() {
     const el = document.getElementById('pp-selected-info');
+    _setColModEnabled(false);
     if (el) el.textContent = 'No object selected';
     if (_activeInvBtn) {
         _activeInvBtn.classList.remove('active-inv');
         _activeInvBtn = null;
     }
+}
+
+function _setColModEnabled(enabled) {
+    const btn = document.getElementById('pp-colmod');
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.style.display = enabled ? 'block' : 'none';
 }
 
 export function updateSelectedInfo(meshOrGroup) {
