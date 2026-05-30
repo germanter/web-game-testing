@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPV Suicide Drone Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: sans-serif;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ff00;
+            font-family: monospace;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            border: 2px solid rgba(0, 255, 0, 0.5);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #instructions {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            cursor: pointer;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">
+        <h1>FPV DRONE SIMULATOR</h1>
+        <p>Click anywhere to arm the drone & lock mouse</p>
+        <p style="color: #aaa;">W/S: Pitch/Forward/Backward | A/D: Roll (Flips) | Q/E: Vertical Thrust<br>Mouse: Heavy Yaw & Pitch Look Control</p>
+    </div>
+
+    <div id="ui">
+        <div>SYSTEM: ARMED</div>
+        <div id="speed">SPEED: 0.00 m/s</div>
+        <div id="altitude">ALT: 0.00 m</div>
+    </div>
+    
+    <div id="crosshair"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // ─── CUSTOMIZABLE CONFIGURATION ──────────────────────────────
+        const DRONE_CONFIG = {
+            forwardThrust: 45,    // How fast W/S pushes you forward
+            verticalThrust: 35,   // How fast Q/E lifts you
+            rollSpeed: 4.5,       // A/D flipping speed
+            mouseSensitivity: 0.18,// Raw input multiplier
+            mouseInertia: 0.07,   // Lower = HEAVIER/smoother mouse weight (0.01 - 0.1)
+            linearDrag: 0.97,     // Momentum decay (air resistance)
+            angularDrag: 0.92     // Rotation spin decay
+        };
+
+        // ─── SERVER-SIDE / BOILERPLATE SETUP ────────────────────────
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x111116, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(scene.fog.color);
+        document.body.appendChild(renderer.domElement);
+
+        // ─── ENVIRONMENT BUILDER (Obstacles to fly through) ─────────
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0x00ffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // Ground Grid
+        const grid = new THREE.GridHelper(500, 100, 0x00ff00, 0x444444);
+        grid.position.y = 0;
+        scene.add(grid);
+
+        // Random Obstacle Towers
+        const boxGeo = new THREE.BoxGeometry(4, 30, 4);
+        const boxMat = new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.4 });
+        for(let i=0; i<60; i++) {
+            const tower = new THREE.Mesh(boxGeo, boxMat);
+            tower.position.set((Math.random() - 0.5) * 200, 15, (Math.random() - 0.5) * 200);
+            scene.add(tower);
+        }
+
+        // ─── STATE MANAGEMENT ────────────────────────────────────────
+        const keys = { w: false, a: false, s: false, d: false, q: false, e: false };
+        let mouseInputX = 0;
+        let mouseInputY = 0;
+
+        // Drone Physics States
+        const dronePhysics = {
+            position: new THREE.Vector3(0, 5, 20),
+            velocity: new THREE.Vector3(),
+            angularVelocity: new THREE.Vector3() // X: Pitch, Y: Yaw, Z: Roll
+        };
+
+        // Sync camera position initialized to drone initial position
+        camera.position.copy(dronePhysics.position);
+
+        // ─── EVENT LISTENERS & POINTER LOCK ──────────────────────────
+        const instContainer = document.getElementById('instructions');
+        instContainer.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                instContainer.style.display = 'none';
+            } else {
+                instContainer.style.display = 'flex';
+                // Reset keys when tracking is lost
+                for (let k in keys) keys[k] = false;
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement !== document.body) return;
+            // Accumulate raw mouse frame alterations
+            mouseInputX += e.movementX;
+            mouseInputY += e.movementY;
+        });
+
+        document.addEventListener('keydown', (e) => {
+            switch(e.code) {
+                case 'KeyW': keys.w = true; break;
+                case 'KeyS': keys.s = true; break;
+                case 'KeyA': keys.a = true; break;
+                case 'KeyD': keys.d = true; break;
+                case 'KeyQ': keys.q = true; break;
+                case 'KeyE': keys.e = true; break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            switch(e.code) {
+                case 'KeyW': keys.w = false; break;
+                case 'KeyS': keys.s = false; break;
+                case 'KeyA': keys.a = false; break;
+                case 'KeyD': keys.d = false; break;
+                case 'KeyQ': keys.q = false; break;
+                case 'KeyE': keys.e = false; break;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // UI DOM references
+        const speedUI = document.getElementById('speed');
+        const altUI = document.getElementById('altitude');
+
+        // ─── PHYSICS ENGINE ENGINE (MAIN LOOP) ───────────────────────
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.1); // Cap delta to avoid giant simulation jumps
+            if (document.pointerLockElement !== document.body) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            // 1. DIRECTIONAL VECTORS (Extracted natively from current orientation)
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+            // 2. TRANSLATIONAL FORCES (Keyboard Linear Movement)
+            if (keys.w) dronePhysics.velocity.addScaledVector(forward, DRONE_CONFIG.forwardThrust * delta);
+            if (keys.s) dronePhysics.velocity.addScaledVector(forward, -DRONE_CONFIG.forwardThrust * delta);
+            if (keys.e) dronePhysics.velocity.addScaledVector(up, DRONE_CONFIG.verticalThrust * delta); // Up Force
+            if (keys.q) dronePhysics.velocity.addScaledVector(up, -DRONE_CONFIG.verticalThrust * delta); // Down Force
+
+            // Apply drag & position shifts
+            dronePhysics.velocity.multiplyScalar(DRONE_CONFIG.linearDrag);
+            dronePhysics.position.addScaledVector(dronePhysics.velocity, delta);
+
+            // Hard ground floor stop
+            if (dronePhysics.position.y < 0.2) {
+                dronePhysics.position.y = 0.2;
+                dronePhysics.velocity.set(0,0,0); // Crashing resets kinetic energy
+            }
+
+            // 3. ROTATIONAL FORCES & "WEIGHTED" ROTATION MAPPING
+            // Target Velocities driven by input devices
+            const targetYawVelocity = -mouseInputX * DRONE_CONFIG.mouseSensitivity;
+            const targetPitchVelocity = -mouseInputY * DRONE_CONFIG.mouseSensitivity;
+            const targetRollVelocity = (keys.a ? DRONE_CONFIG.rollSpeed : 0) + (keys.d ? -DRONE_CONFIG.rollSpeed : 0);
+
+            // Reset raw mouse variables immediately after parsing framework intent
+            mouseInputX = 0;
+            mouseInputY = 0;
+
+            // Smoothly LERP current angular speeds towards targets to simulate severe physical weight/inertia
+            dronePhysics.angularVelocity.y += (targetYawVelocity - dronePhysics.angularVelocity.y) * DRONE_CONFIG.mouseInertia;
+            dronePhysics.angularVelocity.x += (targetPitchVelocity - dronePhysics.angularVelocity.x) * DRONE_CONFIG.mouseInertia;
+            dronePhysics.angularVelocity.z += (targetRollVelocity - dronePhysics.angularVelocity.z) * DRONE_CONFIG.mouseInertia;
+
+            // Apply angular drag decay over time
+            dronePhysics.angularVelocity.multiplyScalar(DRONE_CONFIG.angularDrag);
+
+            // Construct local coordinate system rotation steps per frame 
+            const localPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dronePhysics.angularVelocity.x * delta);
+            const localYaw   = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dronePhysics.angularVelocity.y * delta);
+            const localRoll  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), dronePhysics.angularVelocity.z * delta);
+
+            // Multiply active camera orientation sequence natively via Quaternions
+            camera.quaternion.multiply(localYaw).multiply(localPitch).multiply(localRoll);
+            camera.position.copy(dronePhysics.position);
+
+            // 4. METRIC HUD UPDATES
+            speedUI.innerText = `SPEED: ${(dronePhysics.velocity.length() * 3.6).toFixed(1)} km/h`;
+            altUI.innerText = `ALT: ${dronePhysics.position.y.toFixed(1)} m`;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

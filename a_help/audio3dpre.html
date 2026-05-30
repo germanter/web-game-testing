@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Audio Orbit Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #111;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+            text-align: center;
+        }
+
+        .instructions {
+            background: rgba(20, 20, 20, 0.85);
+            padding: 30px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 450px;
+        }
+
+        h1 { margin-top: 0; color: #00ffcc; font-size: 24px; }
+        p { line-height: 1.6; color: #ccc; }
+        
+        .controls-guide {
+            background: #222;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 15px 0;
+            color: #ff007f;
+            text-align: left;
+            display: inline-block;
+        }
+
+        input[type="file"] {
+            margin-top: 15px;
+            padding: 10px;
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 80%;
+        }
+
+        input[type="file"]:hover {
+            background: #444;
+        }
+
+        .click-prompt {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #00ffcc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            animation: blink 1.5s infinite;
+            cursor: pointer;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: rgba(0, 255, 204, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+        }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+
+    <div id="ui-layer">
+        <div class="instructions" id="instructions-container">
+            <h1>3D Audio Orbit Tester</h1>
+            <p>Upload an MP3. You will spawn in the center, and the audio block will orbit around your head.</p>
+            
+            <div class="controls-guide">
+                W, A, S, D = Fly off-center to test volume drop<br>
+                Space / Shift = Elevate Up / Down<br>
+                Mouse = Look Around<br>
+                ESC = Unlock Mouse / Upload MP3
+            </div>
+
+            <br>
+            <input type="file" id="audio-upload" accept="audio/mp3" onclick="event.stopPropagation();">
+            
+            <div class="click-prompt" id="start-button">Click Anywhere Else To Start</div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        // --- 1. Scene Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x111111, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Spawning exactly in the middle, head height
+        camera.position.set(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(scene.fog.color);
+        container.appendChild(renderer.domElement);
+
+        // --- 2. Lights & Environment ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0x00ffcc, 1);
+        directionalLight.position.set(10, 20, 15);
+        scene.add(directionalLight);
+
+        const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x222222);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
+
+        const ceilingGrid = new THREE.GridHelper(200, 50, 0x444444, 0x111111);
+        ceilingGrid.position.y = 50;
+        scene.add(ceilingGrid);
+
+        // --- 3. The Central Block (Sound Source) ---
+        const geometry = new THREE.BoxGeometry(2, 2, 2); // Made it slightly smaller so it doesn't block the screen if close
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xff007f, 
+            roughness: 0.2,
+            metalness: 0.5,
+            emissive: 0x220011
+        });
+        const soundBlock = new THREE.Mesh(geometry, material);
+        // Start position doesn't matter much as it gets overridden in the animate loop
+        scene.add(soundBlock);
+
+        const coreGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        soundBlock.add(core);
+
+        // --- 4. Audio Setup ---
+        const audioListener = new THREE.AudioListener();
+        camera.add(audioListener);
+
+        const positionalSound = new THREE.PositionalAudio(audioListener);
+        
+        positionalSound.setRefDistance(5);   
+        positionalSound.setRolloffFactor(2.5); 
+        positionalSound.setMaxDistance(100);  
+        positionalSound.setLoop(true);
+        
+        soundBlock.add(positionalSound);
+
+        const audioUpload = document.getElementById('audio-upload');
+        audioUpload.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                const audioLoader = new THREE.AudioLoader();
+                
+                audioLoader.load(fileURL, function(buffer) {
+                    if(positionalSound.isPlaying) positionalSound.stop();
+                    positionalSound.setBuffer(buffer);
+                    positionalSound.setVolume(1.5);
+                    positionalSound.play();
+                });
+            }
+        });
+
+        // --- 5. Controls ---
+        const controls = new THREE.PointerLockControls(camera, document.body);
+        const uiLayer = document.getElementById('ui-layer');
+        const crosshair = document.getElementById('crosshair');
+
+        uiLayer.addEventListener('click', () => {
+            controls.lock();
+        });
+
+        controls.addEventListener('lock', () => {
+            uiLayer.style.opacity = '0';
+            uiLayer.style.pointerEvents = 'none';
+            crosshair.style.display = 'block';
+            if (audioListener.context.state === 'suspended') {
+                audioListener.context.resume();
+            }
+        });
+
+        controls.addEventListener('unlock', () => {
+            uiLayer.style.opacity = '1';
+            uiLayer.style.pointerEvents = 'auto';
+            crosshair.style.display = 'none';
+        });
+
+        const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+        
+        window.addEventListener('keydown', (e) => {
+            switch(e.code) {
+                case 'KeyW': keys.w = true; break;
+                case 'KeyA': keys.a = true; break;
+                case 'KeyS': keys.s = true; break;
+                case 'KeyD': keys.d = true; break;
+                case 'Space': keys.space = true; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': keys.shift = true; break;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            switch(e.code) {
+                case 'KeyW': keys.w = false; break;
+                case 'KeyA': keys.a = false; break;
+                case 'KeyS': keys.s = false; break;
+                case 'KeyD': keys.d = false; break;
+                case 'Space': keys.space = false; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': keys.shift = false; break;
+            }
+        });
+
+        // --- 6. Physics, Orbit & Movement Loop ---
+        const clock = new THREE.Clock();
+        const moveSpeed = 40.0; 
+        
+        // ORBIT PARAMETERS
+        let orbitAngle = 0;
+        const orbitRadius = 15; // How far away the block is from the center
+        const orbitSpeed = 1.2; // How fast it spins around you
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            // CALCULATE CIRCULAR PATH
+            orbitAngle += orbitSpeed * delta;
+            
+            // Math.cos and Math.sin create a perfect circle around the origin (0,0)
+            soundBlock.position.x = Math.cos(orbitAngle) * orbitRadius;
+            soundBlock.position.z = Math.sin(orbitAngle) * orbitRadius;
+            soundBlock.position.y = 2; // Keep it at head height
+
+            // Spin the block itself
+            soundBlock.rotation.x += 0.02;
+            soundBlock.rotation.y += 0.02;
+            
+            if (positionalSound.isPlaying) {
+                const scaleFactor = 1 + Math.sin(Date.now() * 0.01) * 0.15;
+                core.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            }
+
+            if (controls.isLocked) {
+                const actualSpeed = moveSpeed * delta;
+
+                if (keys.w) camera.translateZ(-actualSpeed);
+                if (keys.s) camera.translateZ(actualSpeed);
+                if (keys.a) camera.translateX(-actualSpeed);
+                if (keys.d) camera.translateX(actualSpeed);
+                if (keys.space) camera.translateY(actualSpeed);
+                if (keys.shift) camera.translateY(-actualSpeed);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 7. Responsive Window Resizing ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
