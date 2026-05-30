@@ -1,27 +1,18 @@
 ///// src/initMap.js /////
 
-import { data }                                      from '../config.js';
-import { WORLD_SEED, SYSTEM }                        from './global.js';
+import { data, camData }                             from '../config.js';
+import { WORLD_SEED, SYSTEM, CAMERA_SYSTEM }         from './global.js';
 import { scene, renderer, chunks, updateMap, getMacroBiomeValue, getHeight } from './map/mainMap.js';
-import { camera, initCameraControls, updateCameraMovement, handleCameraResize } from './camera/debugCamera.js';
+import { camera, handleCameraResize, updateCameraView } from './camera/customCamera.js';
+import { initControls, updateControls }              from './controls/mainControl.js';
 import * as DC                                       from '../ui/debug/debugController.js';
 import * as Planter                                  from './objPlanter.js';
 
 // ── Boot sequence ──────────────────────────────────────────────────────────────
-
-// 1. Create ALL UI through debugController (our only UI gate)
 DC.initAllUI(WORLD_SEED);
-
-// 2. Wire pointer lock overlay — won't lock when planter mode is active
 DC.setupPointerLockUI(() => !Planter.isPlanterActive());
-
-// 3. Init camera WASD/mouse-look listeners
-initCameraControls();
-
-// 4. Init object planter (TransformControls + inventory UI)
+initControls();
 Planter.initPlanter(renderer.domElement, saveMapToDisk);
-
-// 5. Load any previously saved objects
 Planter.loadSavedObjects();
 
 // ── Window resize ──────────────────────────────────────────────────────────────
@@ -36,12 +27,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 export async function saveMapToDisk() {
-    console.log('Saving map…', data);
+    console.log('Saving map…');
     try {
         await fetch('/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+            body: JSON.stringify({ data, camData }),
         });
         console.log('Save successful!');
         DC.showSaveNotification();
@@ -58,13 +49,20 @@ function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
 
-    // Camera movement (auto-paused in planter mode by debugCamera)
-    updateCameraMovement(delta, getHeight(camera.position.x, camera.position.z));
+    let targetX = camera.position.x;
+    let targetZ = camera.position.z;
 
-    // Chunk streaming + water
+    if (CAMERA_SYSTEM.ACTIVE_CAMERA_ID > 1 && camera.userData.mother) {
+        const m = camera.userData.mother;
+        targetX = m.position.x;
+        targetZ = m.position.z;
+    }
+
+    updateControls(delta, getHeight(targetX, targetZ));
+    updateCameraView();
+
     updateMap(camera);
 
-    // Throttled debug UI updates (every 10 frames) checks global master debug state
     if (++frameCounter % 10 === 0 && SYSTEM.DEBUG) {
         DC.updateDebugStats(DC.getStatsEl(), chunks.size, camera);
         DC.updateBiomeUI(DC.getBiomeEl(), getMacroBiomeValue(camera.position.x, camera.position.z));

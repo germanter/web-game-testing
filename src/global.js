@@ -8,9 +8,20 @@ export const SYSTEM = {
     DEBUG: true, 
 };
 
+export const CAMERA_SYSTEM = {
+    ACTIVE_CAMERA_ID: 1// 7 1 = ghost fly cam. >1 = object-attached
+};
+
+export const CAMERA_HELPER = {
+    boxSize: [6.0, 6.0, 10.0],       // Massive box blueprint 
+    coneSize: [4.0, 6.0, 4],         // Giant direction cone
+    defaultOffset: { x: 0, y: 15, z: 25 }, // Pushed way out so it doesn't swallow the mother object
+    colorBox: 0x3b82f6,
+    colorCone: 0xffb84d
+};
+
 // ── PHYSICS & COLLISION ────────────────────────────────────────────────
 export const PHYSICS = {
-    ACTIVE_COLLIDER_TARGET: 'DEBUG_CAMERA', // Switch which entity obeys the decoupled math physics
     entityRadius: 1.5,                      // Base physical radius of the object traversing the world
 };
 

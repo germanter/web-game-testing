@@ -1,14 +1,6 @@
 ///// ui/debug/debugController.js /////
 import { SYSTEM, UI_BIOME } from '../../src/global.js';
 
-//
-// THE ONLY UI EXPORT GATE
-// ──────────────────────────────────────────────────────────────────────────────
-// ALL DOM elements are created and owned here.
-// No other file is allowed to touch document.body for UI directly.
-// Other modules (objPlanter, initMap) call functions here to set up their UI.
-// ──────────────────────────────────────────────────────────────────────────────
-
 // ─── INTERNAL ELEMENT REFS ───────────────────────────────────────────────────
 const _el = {};
 
@@ -70,7 +62,7 @@ function _injectStyles() {
             box-shadow: 0 6px 28px rgba(0,0,0,0.7);
             border-radius: 12px; padding: 14px 16px;
             box-sizing: border-box; z-index: 20;
-            display: none; /* shown only in planter mode */
+            display: none; 
             color: #ddd; font-size: 13px;
         }
         #planter-panel h3 {
@@ -83,7 +75,6 @@ function _injectStyles() {
             padding-bottom: 3px; letter-spacing: 0.6px;
         }
         
-        /* Tag Toggle & View */
         .pp-view-toggle { display: flex; background: #12171c; border-radius: 8px; margin-bottom: 12px; padding: 2px; border: 1px solid #2a2f3a; }
         .pp-vt-btn { flex: 1; padding: 6px 0; text-align: center; font-size: 11px; color: #778; cursor: pointer; border-radius: 6px; transition: 0.2s; font-weight: bold; }
         .pp-vt-btn.active { background: #3b82f6; color: #fff; }
@@ -131,7 +122,6 @@ function _injectStyles() {
             border: 1px solid #2a3040; font-size: 11px; color: #99a;
             min-height: 26px;
         }
-        /* Fly-mode hint shown at bottom-right when NOT in planter mode */
         #planter-hint {
             position: absolute; bottom: 20px; right: 20px;
             background: rgba(0,0,0,0.55); color: #667;
@@ -143,7 +133,6 @@ function _injectStyles() {
 }
 
 // ─── INIT ALL UI ─────────────────────────────────────────────────────────────
-// Called once from initMap.js. Creates everything.
 export function initAllUI(worldSeed) {
     _injectStyles();
 
@@ -153,12 +142,9 @@ export function initAllUI(worldSeed) {
         _createInstructions();
         _createPlanterHint();
     }
-
-    // Planter panel always exists (even in production you'd have some build UI)
     _createPlanterPanel();
 }
 
-// ─── DEBUG HUD ────────────────────────────────────────────────────────────────
 function _createDebugHUD(worldSeed) {
     const hud = document.createElement('div');
     hud.id = 'dbg-hud';
@@ -190,7 +176,6 @@ function _createPlanterHint() {
     _el.planterHint = hint;
 }
 
-// ─── POINTER LOCK INSTRUCTIONS OVERLAY ───────────────────────────────────────
 function _createInstructions() {
     const el = document.createElement('div');
     el.id = 'dbg-instructions';
@@ -213,13 +198,9 @@ function _createInstructions() {
 
 export function setupPointerLockUI(canLockFn) {
     if (!_el.instructions) return;
-
     _el.instructions.addEventListener('click', () => {
-        if (!canLockFn || canLockFn()) {
-            document.body.requestPointerLock();
-        }
+        if (!canLockFn || canLockFn()) document.body.requestPointerLock();
     });
-
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === document.body) {
             _el.instructions.style.opacity = '0';
@@ -247,6 +228,7 @@ function _createPlanterPanel() {
         <div class="pp-view-toggle">
             <div id="vt-main" class="pp-vt-btn active">Planter</div>
             <div id="vt-tags" class="pp-vt-btn">Tagged</div>
+            <div id="vt-cam"  class="pp-vt-btn" style="pointer-events:none; opacity:0.5;" title="Select a single object to edit cameras">CAM</div>
         </div>
 
         <div id="pp-main-view">
@@ -285,15 +267,32 @@ function _createPlanterPanel() {
             <div class="pp-section-title" style="margin-top:12px;">Existing Tags</div>
             <div id="pp-tag-list"></div>
         </div>
+
+        <div id="pp-cam-view" style="display:none; flex-direction:column; gap:8px;">
+            <div class="pp-section-title">Attached Cameras</div>
+            <div id="pp-cam-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto;"></div>
+            <button id="pp-add-cam" class="pp-btn active-inv" style="width:100%; margin-top:8px;">+ Add Camera</button>
+            <div class="pp-section-title" style="margin-top:12px;">Transform Camera</div>
+            <div class="pp-row">
+                <button id="pp-cam-tf-translate" class="pp-btn active-tf" title="Move camera [T]">↔ Move</button>
+                <button id="pp-cam-tf-rotate" class="pp-btn" title="Rotate camera [R]">↻ Rotate</button>
+            </div>
+            <div class="pp-row">
+                <button id="pp-cam-delete" class="pp-btn btn-delete" title="Delete Camera [Del]">🗑 Delete Camera</button>
+            </div>
+        </div>
     `;
     document.body.appendChild(panel);
     _el.planterPanel = panel;
 
-    // View Toggles
     const vtMain = panel.querySelector('#vt-main');
     const vtTags = panel.querySelector('#vt-tags');
+    const vtCam  = panel.querySelector('#vt-cam');
+    
     const viewMain = panel.querySelector('#pp-main-view');
     const viewTags = panel.querySelector('#pp-tag-view');
+    const viewCam  = panel.querySelector('#pp-cam-view');
+    
     const searchInput = panel.querySelector('#pp-tag-search');
     const tagList = panel.querySelector('#pp-tag-list');
 
@@ -301,7 +300,6 @@ function _createPlanterPanel() {
         tagList.innerHTML = '';
         const tags = _planterCbs.onGetTags?.() || [];
         const lowerFilter = filter.toLowerCase();
-        
         const filtered = tags.filter(t => t.toLowerCase().includes(lowerFilter));
         
         if (filtered.length === 0) {
@@ -315,9 +313,7 @@ function _createPlanterPanel() {
             div.textContent = tag;
             div.addEventListener('click', () => {
                 _planterCbs.onSelectTag?.(tag);
-                vtMain.click(); // Autoreturn to main view to transform
-                
-                // Prefill the tag input for easy assignment tracking
+                vtMain.click(); 
                 const tagInput = panel.querySelector('#pp-tag-input');
                 if (tagInput) tagInput.value = tag;
             });
@@ -326,67 +322,71 @@ function _createPlanterPanel() {
     }
 
     vtMain.addEventListener('click', () => {
+        const wasCam = vtCam.classList.contains('active');
         vtMain.classList.add('active');
         vtTags.classList.remove('active');
+        vtCam.classList.remove('active');
         viewMain.style.display = 'block';
         viewTags.style.display = 'none';
+        viewCam.style.display = 'none';
+        if (wasCam) _planterCbs.onCamViewToggled?.(false);
     });
 
     vtTags.addEventListener('click', () => {
+        const wasCam = vtCam.classList.contains('active');
         vtTags.classList.add('active');
         vtMain.classList.remove('active');
+        vtCam.classList.remove('active');
         viewTags.style.display = 'flex';
         viewMain.style.display = 'none';
+        viewCam.style.display = 'none';
         searchInput.value = '';
         renderTagList();
         searchInput.focus();
+        if (wasCam) _planterCbs.onCamViewToggled?.(false);
+    });
+
+    vtCam.addEventListener('click', () => {
+        vtCam.classList.add('active');
+        vtMain.classList.remove('active');
+        vtTags.classList.remove('active');
+        viewCam.style.display = 'flex';
+        viewMain.style.display = 'none';
+        viewTags.style.display = 'none';
+        _planterCbs.onCamViewToggled?.(true);
     });
 
     searchInput.addEventListener('input', (e) => {
         renderTagList(e.target.value);
     });
 
-    // Bind static buttons
-    panel.querySelector('#pp-mode-toggle').addEventListener('click', (e) => {
-        e.stopPropagation();
-        _planterCbs.onToggle?.();
-    });
-    panel.querySelector('#pp-tf-translate').addEventListener('click', (e) => {
-        e.stopPropagation(); _setTfMode('translate');
-    });
-    panel.querySelector('#pp-tf-rotate').addEventListener('click', (e) => {
-        e.stopPropagation(); _setTfMode('rotate');
-    });
-    panel.querySelector('#pp-tf-scale').addEventListener('click', (e) => {
-        e.stopPropagation(); _setTfMode('scale');
-    });
-    panel.querySelector('#pp-delete').addEventListener('click', (e) => {
-        e.stopPropagation();
-        _planterCbs.onDelete?.();
-    });
+    // Main Planter Events
+    panel.querySelector('#pp-mode-toggle').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onToggle?.(); });
+    panel.querySelector('#pp-tf-translate').addEventListener('click', (e) => { e.stopPropagation(); _setTfMode('translate'); });
+    panel.querySelector('#pp-tf-rotate').addEventListener('click', (e) => { e.stopPropagation(); _setTfMode('rotate'); });
+    panel.querySelector('#pp-tf-scale').addEventListener('click', (e) => { e.stopPropagation(); _setTfMode('scale'); });
+    panel.querySelector('#pp-delete').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onDelete?.(); });
     panel.querySelector('#pp-colmod').addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!e.currentTarget.disabled) _planterCbs.onOpenColMod?.();
+        e.stopPropagation(); if (!e.currentTarget.disabled) _planterCbs.onOpenColMod?.();
     });
     
-    // Tag Assignment Handlers
+    // Tag Assignment
     panel.querySelector('#pp-tag-apply').addEventListener('click', (e) => {
         e.stopPropagation();
         const tagInput = panel.querySelector('#pp-tag-input');
-        if (tagInput) {
-            const val = tagInput.value.trim() !== '' ? tagInput.value.trim() : null;
-            _planterCbs.onUpdateTag?.(val);
-        }
+        if (tagInput) _planterCbs.onUpdateTag?.(tagInput.value.trim() !== '' ? tagInput.value.trim() : null);
     });
-
     panel.querySelector('#pp-tag-clear').addEventListener('click', (e) => {
         e.stopPropagation();
         const tagInput = panel.querySelector('#pp-tag-input');
-        if (tagInput) {
-            tagInput.value = '';
-            _planterCbs.onUpdateTag?.(null);
-        }
+        if (tagInput) { tagInput.value = ''; _planterCbs.onUpdateTag?.(null); }
     });
+
+    // CAM View Events
+    panel.querySelector('#pp-add-cam').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onAddCamera?.(); });
+    panel.querySelector('#pp-cam-tf-translate').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onSetCamTfMode?.('translate'); });
+    panel.querySelector('#pp-cam-tf-rotate').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onSetCamTfMode?.('rotate'); });
+    panel.querySelector('#pp-cam-delete').addEventListener('click', (e) => { e.stopPropagation(); _planterCbs.onDeleteCamera?.(); });
 }
 
 function _setTfMode(mode) {
@@ -400,23 +400,19 @@ function _setTfMode(mode) {
 
 export function initPlanterUI(callbacks, objectRegistry) {
     _planterCbs = callbacks;
-
     const container = _el.planterPanel.querySelector('#pp-inventory');
     container.innerHTML = '';
-
     const categories = new Map();
     for (const [id, def] of objectRegistry) {
         if (!categories.has(def.category)) categories.set(def.category, []);
         categories.get(def.category).push(def);
     }
-
     for (const [cat, defs] of categories) {
         const title = document.createElement('div');
         title.className = 'pp-section-title';
         title.style.width = '100%';
         title.textContent = cat;
         container.parentNode.insertBefore(title, container);
-
         defs.forEach(def => {
             const btn = document.createElement('button');
             btn.className = 'pp-btn';
@@ -435,9 +431,35 @@ export function initPlanterUI(callbacks, objectRegistry) {
     }
 }
 
-// ─── PUBLIC HELPERS & UPDATE FUNCTIONS ────────────────────────────────────────
+export function renderCamList(cameras, selectedCamId, onSelectCb) {
+    const list = document.getElementById('pp-cam-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (cameras.length === 0) {
+        list.innerHTML = '<div style="color:#667; font-size:11px; padding:4px;">No cameras attached.</div>';
+        return;
+    }
+    cameras.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'pp-tag-item';
+        if (c.id === selectedCamId) {
+            div.style.borderColor = '#3b82f6';
+            div.style.background = '#2a3040';
+        }
+        div.textContent = `Camera ${c.id}`;
+        div.addEventListener('click', () => onSelectCb(c.id));
+        list.appendChild(div);
+    });
+}
 
-// Gets the currently typed tag from the UI text field. Returns null if empty.
+export function updateCamTfUI(mode) {
+    if (!_el.planterPanel) return;
+    const tBtn = _el.planterPanel.querySelector('#pp-cam-tf-translate');
+    const rBtn = _el.planterPanel.querySelector('#pp-cam-tf-rotate');
+    if (tBtn) tBtn.classList.toggle('active-tf', mode === 'translate');
+    if (rBtn) rBtn.classList.toggle('active-tf', mode === 'rotate');
+}
+
 export function getCurrentTag() {
     const input = document.getElementById('pp-tag-input');
     if (!input) return null;
@@ -445,34 +467,23 @@ export function getCurrentTag() {
     return val !== '' ? val : null;
 }
 
+export function isCamViewActive() {
+    if (!_el.planterPanel) return false;
+    const vtCam = _el.planterPanel.querySelector('#vt-cam');
+    return vtCam && vtCam.classList.contains('active');
+}
+
 export function onPlanterModeChanged(isActive) {
-    if (_el.planterPanel) {
-        _el.planterPanel.style.display = isActive ? 'block' : 'none';
-    }
-    if (_el.crosshair) {
-        _el.crosshair.style.display = isActive ? 'none' : 'block';
-    }
-    if (_el.planterHint) {
-        _el.planterHint.style.display = isActive ? 'none' : 'block';
-    }
+    if (_el.planterPanel) _el.planterPanel.style.display = isActive ? 'block' : 'none';
+    if (_el.crosshair) _el.crosshair.style.display = isActive ? 'none' : 'block';
+    if (_el.planterHint) _el.planterHint.style.display = isActive ? 'none' : 'block';
     const btn = document.getElementById('pp-mode-toggle');
     if (btn) {
-        if (isActive) {
-            btn.textContent = '🌍 Fly Mode (Tab)';
-            btn.classList.add('planter-active');
-        } else {
-            btn.textContent = '🚀 Enter Planter (Tab)';
-            btn.classList.remove('planter-active');
-        }
+        if (isActive) { btn.textContent = '🌍 Fly Mode (Tab)'; btn.classList.add('planter-active'); } 
+        else { btn.textContent = '🚀 Enter Planter (Tab)'; btn.classList.remove('planter-active'); }
     }
-
-    if (!isActive) {
-        document.body.requestPointerLock();
-    } else {
-        if (document.pointerLockElement) {
-            document.exitPointerLock();
-        }
-    }
+    if (!isActive) document.body.requestPointerLock();
+    else if (document.pointerLockElement) document.exitPointerLock();
 }
 
 export function onObjectSelected(mesh, def) {
@@ -483,10 +494,13 @@ export function onObjectSelected(mesh, def) {
     const p = mesh.position;
     el.innerHTML = `
         <b style="color:#dde">${name}</b><br>
-        <span style="color:#667">
-            x:${p.x.toFixed(0)} y:${p.y.toFixed(0)} z:${p.z.toFixed(0)}
-        </span>
+        <span style="color:#667">x:${p.x.toFixed(0)} y:${p.y.toFixed(0)} z:${p.z.toFixed(0)}</span>
     `;
+    const vtCam = document.getElementById('vt-cam');
+    if (vtCam) {
+        vtCam.style.pointerEvents = 'auto';
+        vtCam.style.opacity = '1';
+    }
 }
 
 export function onGroupSelected(count) {
@@ -497,15 +511,24 @@ export function onGroupSelected(count) {
         <b style="color:#dde">Group Selected</b><br>
         <span style="color:#667">${count} objects combined</span>
     `;
+    const vtCam = document.getElementById('vt-cam');
+    if (vtCam) {
+        vtCam.style.pointerEvents = 'none';
+        vtCam.style.opacity = '0.5';
+        if (vtCam.classList.contains('active')) document.getElementById('vt-main').click();
+    }
 }
 
 export function onObjectDeselected() {
     const el = document.getElementById('pp-selected-info');
     _setColModEnabled(false);
     if (el) el.textContent = 'No object selected';
-    if (_activeInvBtn) {
-        _activeInvBtn.classList.remove('active-inv');
-        _activeInvBtn = null;
+    if (_activeInvBtn) { _activeInvBtn.classList.remove('active-inv'); _activeInvBtn = null; }
+    const vtCam = document.getElementById('vt-cam');
+    if (vtCam) {
+        vtCam.style.pointerEvents = 'none';
+        vtCam.style.opacity = '0.5';
+        if (vtCam.classList.contains('active')) document.getElementById('vt-main').click();
     }
 }
 
@@ -523,8 +546,7 @@ export function updateSelectedInfo(meshOrGroup) {
     const p = meshOrGroup.position;
     const existingName = el.querySelector('b');
     if (existingName) {
-        el.querySelector('span').textContent =
-            `x:${p.x.toFixed(0)} y:${p.y.toFixed(0)} z:${p.z.toFixed(0)}`;
+        el.querySelector('span').textContent = `x:${p.x.toFixed(0)} y:${p.y.toFixed(0)} z:${p.z.toFixed(0)}`;
     }
 }
 
@@ -544,14 +566,11 @@ export function updateBiomeUI(biomeEl, macroValue) {
     else if (macroValue < UI_BIOME.hillsMax)       { biomeStr = UI_BIOME.hillsName;       bColor = UI_BIOME.hillsColor; }
     else if (macroValue < UI_BIOME.hillsMountMax)  { biomeStr = UI_BIOME.hillsMountName;  bColor = UI_BIOME.hillsMountColor; }
     else                                           { biomeStr = UI_BIOME.mountainsName;   bColor = UI_BIOME.mountainsColor; }
-    biomeEl.innerHTML =
-        `Biome: <span style="color:${bColor};font-weight:bold;">${biomeStr} (${macroValue.toFixed(2)})</span>`;
+    biomeEl.innerHTML = `Biome: <span style="color:${bColor};font-weight:bold;">${biomeStr} (${macroValue.toFixed(2)})</span>`;
 }
 
 export function updateCrosshairBuildMode(isBuildMode) {
-    if (_el.crosshair) {
-        _el.crosshair.style.filter = isBuildMode ? 'hue-rotate(140deg)' : 'none';
-    }
+    if (_el.crosshair) _el.crosshair.style.filter = isBuildMode ? 'hue-rotate(140deg)' : 'none';
 }
 
 export function showSaveNotification() {

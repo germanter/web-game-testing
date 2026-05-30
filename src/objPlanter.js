@@ -1,81 +1,71 @@
 ///// src/objPlanter.js /////
-//
-// OBJECT PLANTER — Core Logic
-// ──────────────────────────────────────────────────────────────────────────────
-// Everything for placing and manipulating objects in the world lives here:
-//   • Fly ↔ Planter mode toggling
-//   • TransformControls (translate / rotate / scale gizmo)
-//   • Object selection via raycasting
-//   • Group multi-selection via Tag View 
-//   • Spawn from OBJECT_REGISTRY inventory
-//   • Delete selected object/group
-//   • Runtime ↔ save-data sync
-//
-// UI is NEVER touched directly here — all feedback goes through DebugController.
-// ──────────────────────────────────────────────────────────────────────────────
-
 import { scene, chunks }              from './map/mainMap.js';
-import { camera, setPlanterModeFlag }  from './camera/debugCamera.js';
+import { camera }                      from './camera/customCamera.js';
+import { setPlanterModeFlag }          from './controls/mainControl.js';
 import * as DC                         from '../ui/debug/debugController.js';
 import { OBJECT_REGISTRY, createObjectMesh } from '../assets/objects.js';
-import { data }                        from '../config.js';
+import { data, camData }               from '../config.js';
 import { openColModModal }             from '../ui/debug/colmodModal.js';
-import {
-    cloneColliderArray,
-    ensureEntryColliders,
-    rebuildColliderNodes,
-} from './collision/collisionColliderForPlanted.js';
+import { CAMERA_HELPER }               from './global.js';
+import { cloneColliderArray, ensureEntryColliders, rebuildColliderNodes } from './collision/collisionColliderForPlanted.js';
 
-// ─── STATE ───────────────────────────────────────────────────────────────────
-let _active       = false;   // true = planter mode, false = fly mode
-let _tc           = null;    // THREE.TransformControls instance
-let _selected     = null;    // currently selected THREE.Mesh OR THREE.Group
-let _isDragging   = false;   // TransformControls gizmo drag in progress
+let _active       = false;   
+let _tc           = null;    
+let _selected     = null;    
+let _isDragging   = false;   
 let _tfMode       = 'translate';
-let _clipboard    = null;    // memory for Ctrl+C / Ctrl+X ({ type: 'single'|'group', items: [] })
+let _clipboard    = null;    
 let _saveMapToDisk = null;
 let _colmodOpen = false;
 
-// Track the next available UUID (ensures IDs are endless and unique)
 export let uuidHandler = 1;
+let _camIdHandler = 2; // ID 1 is reserved for ghost fly cam
 
-// Multi-select grouping logic mechanism
 const _selectionGroup = new THREE.Group();
-
-// Object tracking: mesh → save-data entry (live reference to data[] element)
 const _meshToEntry = new Map();
-
-// Raycaster (for click-selection and terrain placement)
 const _raycaster = new THREE.Raycaster();
 const _mouse     = new THREE.Vector2();
 
-// ─── INIT ─────────────────────────────────────────────────────────────────────
+let _activeCamHelpers = new Map();
+let _selectedCamHelper = null;
+let _camTfMode = 'translate';
+
 export function initPlanter(rendererDomElement, saveMapToDisk) {
     _saveMapToDisk = saveMapToDisk;
-    scene.add(_selectionGroup); // Core group for multi-select transforms
+    scene.add(_selectionGroup); 
 
-    // ── TransformControls setup (mirrors 3dArena.html pattern) ────────────────
     _tc = new THREE.TransformControls(camera, rendererDomElement);
     _tc.setSize(0.8);
     _tc.setSpace('world');
 
-    // Critical: while dragging the gizmo we block pointer events that would
-    // accidentally deselect or re-pick objects
     _tc.addEventListener('dragging-changed', (e) => { _isDragging = e.value; });
 
-    // Keep save data synced every frame while user drags gizmo
     _tc.addEventListener('objectChange', () => {
-        if (_selected === _selectionGroup) {
-            _selectionGroup.children.forEach(m => _syncToData(m));
-        } else if (_selected) {
-            _syncToData(_selected);
+        if (DC.isCamViewActive()) {
+            if (_selectedCamHelper) {
+                const cId = _selectedCamHelper.userData.camId;
+                const cData = camData.find(c => c.id === cId);
+                if (cData) {
+                    cData.lx = _selectedCamHelper.position.x;
+                    cData.ly = _selectedCamHelper.position.y;
+                    cData.lz = _selectedCamHelper.position.z;
+                    cData.rx = _selectedCamHelper.rotation.x;
+                    cData.ry = _selectedCamHelper.rotation.y;
+                    cData.rz = _selectedCamHelper.rotation.z;
+                }
+            }
+        } else {
+            if (_selected === _selectionGroup) {
+                _selectionGroup.children.forEach(m => _syncToData(m));
+            } else if (_selected) {
+                _syncToData(_selected);
+            }
+            DC.updateSelectedInfo(_selected);
         }
-        DC.updateSelectedInfo(_selected);
     });
 
     scene.add(_tc);
 
-    // ── Wire planter UI through DebugController ───────────────────────────────
     DC.initPlanterUI(
         {
             onToggle:         togglePlanterMode,
@@ -85,20 +75,22 @@ export function initPlanter(rendererDomElement, saveMapToDisk) {
             onGetTags:        getDistinctTags,
             onSelectTag:      selectByTag,
             onUpdateTag:      updateSelectionTag,
-            onOpenColMod:     openColModForSelection
+            onOpenColMod:     openColModForSelection,
+            onAddCamera:      addCameraToSelected,
+            onSelectCamera:   selectCameraHelper,
+            onSetCamTfMode:   setCamTransformMode,
+            onDeleteCamera:   deleteSelectedCamera,
+            onCamViewToggled: toggleCamView
         },
         OBJECT_REGISTRY
     );
 
-    // ── Global input listeners ─────────────────────────────────────────────────
     document.addEventListener('pointerdown', _onPointerDown);
     document.addEventListener('keydown',     _onKeyDown);
 }
 
-// ─── LOAD SAVED OBJECTS ───────────────────────────────────────────────────────
 export function loadSavedObjects() { 
     data.forEach(async (entry) => { 
-        // Update the UUID handler to always be +1 higher than the highest existing object
         if (entry.uuid && entry.uuid >= uuidHandler) {
             uuidHandler = entry.uuid + 1;
         }
@@ -106,6 +98,7 @@ export function loadSavedObjects() {
         const mesh = await createObjectMesh(entry.type || 'basic_block'); 
         if (!mesh) return; 
 
+        mesh.userData.uuid = entry.uuid; 
         mesh.position.set(entry.x ?? 0, entry.y ?? 0, entry.z ?? 0); 
         if (entry.rx != null) mesh.rotation.set(entry.rx, entry.ry, entry.rz); 
         if (entry.sx != null) mesh.scale.set(entry.sx, entry.sy, entry.sz); 
@@ -114,13 +107,15 @@ export function loadSavedObjects() {
         _meshToEntry.set(mesh, entry); 
         _prepareColliderDataAndNodes(mesh, entry);
     }); 
+
+    camData.forEach(c => {
+        if (c.id >= _camIdHandler) _camIdHandler = c.id + 1;
+    });
 }
 
-// ─── MODE TOGGLE ──────────────────────────────────────────────────────────────
 export function togglePlanterMode() {
     _active = !_active;
     _clipboard = null;
-
     if (_active) {
         if (document.pointerLockElement) document.exitPointerLock();
         setPlanterModeFlag(true);
@@ -128,19 +123,15 @@ export function togglePlanterMode() {
         _deselect();
         setPlanterModeFlag(false);
     }
-
     DC.onPlanterModeChanged(_active);
 }
 
 export function isPlanterActive() { return _active; }
 
-// ─── TRANSFORM MODE ───────────────────────────────────────────────────────────
 export function setTransformMode(mode) {
     _tfMode = mode;
     if (_tc) _tc.setMode(mode);
 }
-
-// ─── TAGGING LOGIC ────────────────────────────────────────────────────────────
 
 export function getDistinctTags() {
     const tags = new Set();
@@ -156,17 +147,12 @@ export function selectByTag(tagName) {
     for (const [mesh, entry] of _meshToEntry.entries()) {
         if (entry.tag === tagName) meshes.push(mesh);
     }
-    if (meshes.length > 0) {
-        _selectGroup(meshes);
-    } else {
-        _deselect();
-    }
+    if (meshes.length > 0) _selectGroup(meshes);
+    else _deselect();
 }
 
 export function updateSelectionTag(newTag) {
     if (!_selected) return;
-    
-    // Assign tag to all children if it's a group, or single element
     if (_selected === _selectionGroup) {
         _selectionGroup.children.forEach(m => {
             const entry = _meshToEntry.get(m);
@@ -178,30 +164,25 @@ export function updateSelectionTag(newTag) {
     }
 }
 
-// ─── SPAWN FROM INVENTORY ─────────────────────────────────────────────────────
 export async function spawnFromInventory(typeId) { 
-    if (!_active) return; // safety guard
+    if (!_active) return; 
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     const spawnDist = 400; 
     const spawnX = camera.position.x + forward.x * spawnDist;
     const spawnZ = camera.position.z + forward.z * spawnDist;
-
-    // Grab terrain height before await so we don't drift if camera moves
     const terrainY = _getTerrainHeightAt(spawnX, spawnZ);
 
-    // Await the new async loader
     const mesh = await createObjectMesh(typeId);
     if (!mesh) return;
 
     mesh.position.set(spawnX, terrainY + 2, spawnZ);
     scene.add(mesh);
 
-    // Generate the incremental UUID and pull current input Tag directly from UI
     const currentUUID = uuidHandler++;
+    mesh.userData.uuid = currentUUID; 
     const currentTag = DC.getCurrentTag();
 
-    // Register in save data
     const entry = {
         uuid: currentUUID,
         tag: currentTag,
@@ -217,10 +198,8 @@ export async function spawnFromInventory(typeId) {
     _select(mesh);
 }
 
-// ─── PASTE FROM CLIPBOARD (CTRL+V) ────────────────────────────────────────────
 export async function openColModForSelection() {
     if (!_active || !_selected || _selected === _selectionGroup || _colmodOpen) return;
-
     const entry = _meshToEntry.get(_selected);
     if (!entry) return;
 
@@ -250,12 +229,10 @@ export async function openColModForSelection() {
 
 async function pasteObject() {
     if (!_active || !_clipboard) return;
-
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     const spawnDist = 400; 
     const spawnX = camera.position.x + forward.x * spawnDist;
     const spawnZ = camera.position.z + forward.z * spawnDist;
-
     const terrainY = _getTerrainHeightAt(spawnX, spawnZ);
     const spawnCenter = new THREE.Vector3(spawnX, terrainY + 2, spawnZ);
 
@@ -265,15 +242,15 @@ async function pasteObject() {
         if (!mesh) return;
 
         mesh.position.copy(spawnCenter);
-        
-        // Apply copied rotations and scales
         if (cData.rx != null) mesh.rotation.set(cData.rx, cData.ry, cData.rz);
         if (cData.sx != null) mesh.scale.set(cData.sx, cData.sy, cData.sz);
 
         scene.add(mesh);
+        const newUUID = uuidHandler++;
+        mesh.userData.uuid = newUUID;
 
         const entry = {
-            uuid: uuidHandler++,
+            uuid: newUUID,
             tag: cData.tag || null,
             type: cData.type,
             x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
@@ -284,19 +261,12 @@ async function pasteObject() {
         data.push(entry);
         _meshToEntry.set(mesh, entry);
         _prepareColliderDataAndNodes(mesh, entry);
-
         _select(mesh);
-
     } else if (_clipboard.type === 'group') {
-        // Find geometric center of copied grouping array
         const box = new THREE.Box3();
-        _clipboard.items.forEach(item => {
-            box.expandByPoint(new THREE.Vector3(item.x, item.y, item.z));
-        });
+        _clipboard.items.forEach(item => { box.expandByPoint(new THREE.Vector3(item.x, item.y, item.z)); });
         const oldCenter = new THREE.Vector3();
         box.getCenter(oldCenter);
-        
-        // Offset to move everything synchronously to the newly viewed spawn coordinate
         const offset = new THREE.Vector3().subVectors(spawnCenter, oldCenter);
         const pastedMeshes = [];
 
@@ -309,9 +279,11 @@ async function pasteObject() {
             if (cData.sx != null) mesh.scale.set(cData.sx, cData.sy, cData.sz);
 
             scene.add(mesh);
+            const newUUID = uuidHandler++;
+            mesh.userData.uuid = newUUID;
 
             const entry = {
-                uuid: uuidHandler++,
+                uuid: newUUID,
                 tag: cData.tag || null,
                 type: cData.type,
                 x: mesh.position.x, y: mesh.position.y, z: mesh.position.z,
@@ -324,14 +296,10 @@ async function pasteObject() {
             _prepareColliderDataAndNodes(mesh, entry);
             pastedMeshes.push(mesh);
         }
-
-        if (pastedMeshes.length > 0) {
-            _selectGroup(pastedMeshes);
-        }
+        if (pastedMeshes.length > 0) _selectGroup(pastedMeshes);
     }
 }
 
-// ─── SELECTION ────────────────────────────────────────────────────────────────
 function _select(mesh) {
     _deselect();
     _selected = mesh;
@@ -342,63 +310,50 @@ function _select(mesh) {
 
 function _selectGroup(meshes) {
     _deselect();
-
     if (meshes.length === 1) {
         _select(meshes[0]);
         return;
     }
-
-    // Align the gizmo group container directly at the center of target meshes
     const box = new THREE.Box3();
     meshes.forEach(m => box.expandByObject(m));
     const center = new THREE.Vector3();
     box.getCenter(center);
-
     _selectionGroup.position.copy(center);
     _selectionGroup.rotation.set(0, 0, 0);
     _selectionGroup.scale.set(1, 1, 1);
-
     meshes.forEach(m => _selectionGroup.attach(m));
     _selected = _selectionGroup;
     _tc.attach(_selectionGroup);
     _tc.setMode(_tfMode);
-    
     DC.onGroupSelected(meshes.length);
 }
 
 function _deselect() {
     if (_selected === _selectionGroup) {
-        // Return children to standard scene space smoothly, preserving exact world transform 
-        while (_selectionGroup.children.length > 0) {
-            scene.attach(_selectionGroup.children[0]);
-        }
+        while (_selectionGroup.children.length > 0) scene.attach(_selectionGroup.children[0]);
     }
-    
     _selected = null;
     if (_tc) _tc.detach();
     DC.onObjectDeselected();
 }
 
-// ─── DELETE ───────────────────────────────────────────────────────────────────
 export function deleteSelected() { 
     if (!_selected) return; 
 
-    const meshesToDelete = _selected === _selectionGroup 
-        ? [..._selectionGroup.children] 
-        : [_selected];
-
-    _deselect(); // safely detaches everything into scene before deletion
+    const meshesToDelete = _selected === _selectionGroup ? [..._selectionGroup.children] : [_selected];
+    _deselect(); 
 
     meshesToDelete.forEach(mesh => {
         scene.remove(mesh);
-        
         const entry = _meshToEntry.get(mesh);
         if (entry) {
+            for (let i = camData.length - 1; i >= 0; i--) {
+                if (camData[i].parentId === entry.uuid) camData.splice(i, 1);
+            }
             const idx = data.indexOf(entry);
             if (idx !== -1) data.splice(idx, 1);
             _meshToEntry.delete(mesh);
         }
-
         mesh.traverse((node) => {
             if (node.isMesh) {
                 if (node.geometry) node.geometry.dispose();
@@ -411,21 +366,16 @@ export function deleteSelected() {
     });
 }
 
-// ─── SYNC POSITION / ROTATION / SCALE → SAVE DATA ────────────────────────────
 function _syncToData(mesh) {
     const entry = _meshToEntry.get(mesh);
     if (!entry) return;
-
-    // Use getWorld extractions to be completely reliable when objects are inside groups
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     mesh.getWorldPosition(pos);
     mesh.getWorldQuaternion(quat);
     mesh.getWorldScale(scale);
-    
     const euler = new THREE.Euler().setFromQuaternion(quat, 'XYZ');
-
     entry.x = pos.x; 
     entry.y = pos.y; 
     entry.z = pos.z;
@@ -437,26 +387,20 @@ function _syncToData(mesh) {
     entry.sz = scale.z;
 }
 
-// ─── POINTER DOWN ─────────────────────────────────────────────────────────────
 function _onPointerDown(e) { 
-    if (!_active) return;
-    if (_colmodOpen) return;
-    if (_isDragging) return; 
+    if (!_active || _colmodOpen || _isDragging) return; 
     if (e.target.closest('#planter-panel') || e.target.closest('button')) return;
+    if (DC.isCamViewActive()) return; // THE LOCKDOWN
 
     _mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
     _mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     _raycaster.setFromCamera(_mouse, camera);
 
     const placed = Array.from(_meshToEntry.keys());
-    
     const hits = _raycaster.intersectObjects(placed, true); 
     if (hits.length > 0) {
         let hitObj = hits[0].object;
-        while (hitObj && !_meshToEntry.has(hitObj)) {
-            hitObj = hitObj.parent;
-        }
-        
+        while (hitObj && !_meshToEntry.has(hitObj)) hitObj = hitObj.parent;
         if (hitObj) {
             _select(hitObj);
             return;
@@ -465,54 +409,30 @@ function _onPointerDown(e) {
 
     const terrainMeshes = Array.from(chunks.values());
     const terrainHits   = _raycaster.intersectObjects(terrainMeshes, false);
-    if (terrainHits.length > 0) {
-        _deselect();
-    }
+    if (terrainHits.length > 0) _deselect();
 }
 
-// ─── KEY DOWN — shortcuts ─────────────────────────────────────────────────────
 function _onKeyDown(e) {
     if (_colmodOpen) return;
-
-    if (e.code === 'Tab') {
-        e.preventDefault();
-        togglePlanterMode();
-        return;
-    }
-
+    if (e.code === 'Tab') { e.preventDefault(); togglePlanterMode(); return; }
     if (!_active) return;
-
-    // Notice we ignore keys if the user is typing in the Tag input field!
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
 
-    // Clipboard handlers
     if (e.ctrlKey || e.metaKey) {
         if (e.code === 'KeyC') {
             if (_selected === _selectionGroup) {
-                _clipboard = {
-                    type: 'group',
-                    items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m))))
-                };
+                _clipboard = { type: 'group', items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m)))) };
             } else if (_selected) {
-                _clipboard = {
-                    type: 'single',
-                    item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected)))
-                };
+                _clipboard = { type: 'single', item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected))) };
             }
             return;
         }
         if (e.code === 'KeyX') {
             if (_selected === _selectionGroup) {
-                _clipboard = {
-                    type: 'group',
-                    items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m))))
-                };
+                _clipboard = { type: 'group', items: _selectionGroup.children.map(m => JSON.parse(JSON.stringify(_meshToEntry.get(m)))) };
                 deleteSelected();
             } else if (_selected) {
-                _clipboard = {
-                    type: 'single',
-                    item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected)))
-                };
+                _clipboard = { type: 'single', item: JSON.parse(JSON.stringify(_meshToEntry.get(_selected))) };
                 deleteSelected();
             }
             return;
@@ -524,39 +444,166 @@ function _onKeyDown(e) {
     }
 
     switch (e.code) {
-        case 'KeyT':      setTransformMode('translate'); break;
-        case 'KeyR':      setTransformMode('rotate');    break;
-        case 'KeyS':      setTransformMode('scale');     break;
+        case 'KeyT':      
+            if (DC.isCamViewActive()) setCamTransformMode('translate');
+            else setTransformMode('translate');
+            break;
+        case 'KeyR':      
+            if (DC.isCamViewActive()) setCamTransformMode('rotate');
+            else setTransformMode('rotate');    
+            break;
+        case 'KeyS':      
+            if (DC.isCamViewActive()) return; 
+            setTransformMode('scale');     
+            break;
         case 'Delete':
-        case 'Backspace': deleteSelected();              break;
-        case 'Escape':    _deselect();                   break;
-
-        case 'BracketRight': // ] → scale up 10%
+        case 'Backspace': 
+            if (DC.isCamViewActive()) deleteSelectedCamera();
+            else deleteSelected();              
+            break;
+        case 'Escape':    
+            if (DC.isCamViewActive()) {
+                _selectedCamHelper = null;
+                _tc.detach();
+                DC.renderCamList(getCamerasForSelected(), null, selectCameraHelper);
+            } else {
+                _deselect();                   
+            }
+            break;
+        case 'BracketRight': 
+            if (DC.isCamViewActive()) return; 
             if (_selected) {
                 _selected.scale.multiplyScalar(1.1);
-                if (_selected === _selectionGroup) {
-                    _selectionGroup.children.forEach(m => _syncToData(m));
-                } else {
-                    _syncToData(_selected);
-                }
+                if (_selected === _selectionGroup) _selectionGroup.children.forEach(m => _syncToData(m));
+                else _syncToData(_selected);
                 DC.updateSelectedInfo(_selected);
             }
             break;
-        case 'BracketLeft': // [ → scale down 10%
+        case 'BracketLeft': 
+            if (DC.isCamViewActive()) return; 
             if (_selected) {
                 _selected.scale.multiplyScalar(0.909);
-                if (_selected === _selectionGroup) {
-                    _selectionGroup.children.forEach(m => _syncToData(m));
-                } else {
-                    _syncToData(_selected);
-                }
+                if (_selected === _selectionGroup) _selectionGroup.children.forEach(m => _syncToData(m));
+                else _syncToData(_selected);
                 DC.updateSelectedInfo(_selected);
             }
             break;
     }
 }
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// ─── CAM TAB LOGIC ────────────────────────────────────────────────────────────
+function _createCameraHelper() {
+    const group = new THREE.Group();
+    group.userData.isCameraHelper = true;
+    
+    const boxGeo = new THREE.BoxGeometry(...CAMERA_HELPER.boxSize);
+    const boxMat = new THREE.MeshBasicMaterial({ color: CAMERA_HELPER.colorBox, wireframe: true });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    group.add(box);
+
+    const coneGeo = new THREE.ConeGeometry(...CAMERA_HELPER.coneSize);
+    const coneMat = new THREE.MeshBasicMaterial({ color: CAMERA_HELPER.colorCone, wireframe: true });
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.rotation.x = -Math.PI / 2;
+    cone.position.z = -CAMERA_HELPER.boxSize[2]/2 - CAMERA_HELPER.coneSize[2]/2;
+    group.add(cone);
+
+    return group;
+}
+
+function getCamerasForSelected() {
+    if (!_selected || _selected === _selectionGroup) return [];
+    const entry = _meshToEntry.get(_selected);
+    if (!entry) return [];
+    return camData.filter(c => c.parentId === entry.uuid);
+}
+
+export function toggleCamView(isActive) {
+    if (isActive) {
+        _tc.detach();
+        const cams = getCamerasForSelected();
+        cams.forEach(c => {
+            const helper = _createCameraHelper();
+            helper.userData.camId = c.id;
+            _selected.add(helper); 
+            helper.position.set(c.lx, c.ly, c.lz);
+            helper.rotation.set(c.rx, c.ry, c.rz);
+            _activeCamHelpers.set(c.id, helper);
+        });
+        DC.renderCamList(cams, null, selectCameraHelper);
+    } else {
+        _activeCamHelpers.forEach(h => {
+            if (h.parent) h.parent.remove(h);
+        });
+        _activeCamHelpers.clear();
+        _selectedCamHelper = null;
+        if (_selected) {
+            _tc.attach(_selected);
+            _tc.setMode(_tfMode);
+        } else {
+            _tc.detach();
+        }
+    }
+}
+
+export function addCameraToSelected() {
+    if (!_selected || _selected === _selectionGroup) return;
+    const entry = _meshToEntry.get(_selected);
+    if (!entry) return;
+
+    const newId = _camIdHandler++; 
+    const cData = {
+        id: newId,
+        parentId: entry.uuid,
+        lx: CAMERA_HELPER.defaultOffset.x,
+        ly: CAMERA_HELPER.defaultOffset.y,
+        lz: CAMERA_HELPER.defaultOffset.z,
+        rx: 0, ry: 0, rz: 0
+    };
+    camData.push(cData);
+
+    const helper = _createCameraHelper();
+    helper.userData.camId = cData.id;
+    _selected.add(helper);
+    helper.position.set(cData.lx, cData.ly, cData.lz);
+    helper.rotation.set(cData.rx, cData.ry, cData.rz);
+    
+    _activeCamHelpers.set(cData.id, helper);
+    DC.renderCamList(getCamerasForSelected(), cData.id, selectCameraHelper);
+    selectCameraHelper(cData.id);
+}
+
+export function selectCameraHelper(id) {
+    const helper = _activeCamHelpers.get(id);
+    if (helper) {
+        _selectedCamHelper = helper;
+        _tc.attach(helper);
+        _tc.setMode(_camTfMode);
+        DC.renderCamList(getCamerasForSelected(), id, selectCameraHelper);
+    }
+}
+
+export function setCamTransformMode(mode) {
+    _camTfMode = mode;
+    if (_tc && _selectedCamHelper) _tc.setMode(mode);
+    DC.updateCamTfUI(mode);
+}
+
+export function deleteSelectedCamera() {
+    if (!_selectedCamHelper) return;
+    const id = _selectedCamHelper.userData.camId;
+    
+    const idx = camData.findIndex(c => c.id === id);
+    if (idx !== -1) camData.splice(idx, 1);
+    
+    if (_selectedCamHelper.parent) _selectedCamHelper.parent.remove(_selectedCamHelper);
+    _activeCamHelpers.delete(id);
+    
+    _selectedCamHelper = null;
+    _tc.detach();
+    DC.renderCamList(getCamerasForSelected(), null, selectCameraHelper);
+}
+
 function _getTerrainHeightAt(x, z) {
     const origin = new THREE.Vector3(x, 2000, z);
     const dir    = new THREE.Vector3(0, -1, 0);

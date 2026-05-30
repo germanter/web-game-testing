@@ -75,7 +75,7 @@ function checkColliderCollision(worldPos, entityRadius, shape) {
  * @param {Number} entityRadius - Size footprint of the entity
  * @returns {Object} Final resolved velocity {x,y,z} allowing smooth edge sliding
  */
-export function resolveMovement(currentPos, movement, entityRadius = 2.0) {
+export function resolveMovement(currentPos, movement, entityRadius = 2.0, ignoreUUID = null) {
     let finalVx = movement.x;
     let finalVy = movement.y;
     let finalVz = movement.z;
@@ -130,6 +130,9 @@ export function resolveMovement(currentPos, movement, entityRadius = 2.0) {
     for (let i = 0; i < data.length; i++) {
         const obj = data[i];
         if (!obj.colliders || obj.colliders.length === 0) continue;
+
+        // ADD THIS CRITICAL LINE: Skip collision checking against yourself
+        if (ignoreUUID !== null && obj.uuid === ignoreUUID) continue;
 
         // Setup the Object's World Matrix
         _objPos.set(obj.x, obj.y, obj.z);
