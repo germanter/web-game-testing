@@ -1,5 +1,8 @@
 ///// ui/debug/debugController.js /////
 import { SYSTEM, UI_BIOME } from '../../src/global.js';
+import { teleportTo } from '../../src/util/teleport.js'; // <-- NEW
+import { initTeleportPanel, toggleTeleportPanel, closeTeleportPanel } from './teleportPanel.js'; // <-- NEW
+import { data } from '../../config.js'; // <-- NEW (Reading strictly, never writing)
 
 // ─── INTERNAL ELEMENT REFS ───────────────────────────────────────────────────
 const _el = {};
@@ -141,6 +144,28 @@ export function initAllUI(worldSeed) {
         _createCrosshair();
         _createInstructions();
         _createPlanterHint();
+
+        // ── NEW: Teleportation UI initialization ─────────────────────────────
+        initTeleportPanel(
+            (x, y, z) => teleportTo(x, y, z), // Passthrough to core engine decoupled logic
+            () => {
+                // Return ONLY data objects that possess a tag ending in '-loc'
+                return (data || []).filter(item => item.tag && item.tag.endsWith('-loc'));
+            }
+        );
+
+        // Orchestrate toggle via hotkey
+        document.addEventListener('keydown', (e) => {
+            // Supporting both T and K in case you prefer one or the other
+            if (e.ctrlKey && (e.code === 'KeyK')) {
+                e.preventDefault();
+                toggleTeleportPanel();
+            }
+            if (e.code === 'Escape') {
+                closeTeleportPanel();
+            }
+        });
+        // ───────────────────────────────────────────────────────────────────
     }
     _createPlanterPanel();
 }
@@ -189,6 +214,7 @@ function _createInstructions() {
             <div><span>Ascend / Descend</span><span class="dbg-key">E / Q</span></div>
             <div><span>Sprint</span>         <span class="dbg-key">Shift</span></div>
             <div><span>Planter Mode</span>   <span class="dbg-key">Tab</span></div>
+            <div><span>Teleport Mode</span>   <span class="dbg-key">CTRL + K</span></div>
         </div>
         <p style="margin-top:20px;color:#475569;font-size:0.9rem;">Press Tab to open the object planter without locking pointer</p>
     `;

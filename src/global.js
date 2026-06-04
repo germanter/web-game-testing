@@ -9,7 +9,7 @@ export const SYSTEM = {
 };
 
 export const CAMERA_SYSTEM = {
-    ACTIVE_CAMERA_ID: 1// 7 1 = ghost fly cam. >1 = object-attached
+    ACTIVE_CAMERA_ID: 8// 7 1 = ghost fly cam. >1 = object-attached
 };
 
 export const CAMERA_HELPER = {
